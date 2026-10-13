@@ -13,18 +13,22 @@ public struct Endpoint {
     public var isReceiver: Bool { model?.kind == .receiver }
     public var isTested: Bool { Catalog.tested.contains(productID) }
 
-    // Kept alive for the life of the process so the devices it hands out stay valid.
-    nonisolated(unsafe) private static let manager: IOHIDManager = {
+    // Kept so the devices it hands out stay valid. It is not scheduled on a run loop,
+    // so it does not see devices plugged in later: pass `rescan` to look again.
+    nonisolated(unsafe) private static var manager: IOHIDManager?
+
+    private static func makeManager() -> IOHIDManager {
         let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         IOHIDManagerSetDeviceMatching(manager, [kIOHIDVendorIDKey: Catalog.vendorID] as CFDictionary)
         // Without opening the manager, macOS refuses reports to devices that also expose a keyboard usage.
         IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
         return manager
-    }()
+    }
 
     /// Every connected device that speaks the protocol, mice first.
-    public static func discover() -> [Endpoint] {
-        guard let devices = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice> else { return [] }
+    public static func discover(rescan: Bool = false) -> [Endpoint] {
+        if rescan || manager == nil { manager = makeManager() }
+        guard let manager, let devices = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice> else { return [] }
         return devices.compactMap { device -> Endpoint? in
             let pairs = property(device, kIOHIDDeviceUsagePairsKey) as? [[String: Int]] ?? []
             guard pairs.contains(where: { $0[kIOHIDDeviceUsagePageKey] == 0xFF05 }) else { return nil }
@@ -78,7 +82,11 @@ public final class HIDChannel {
     public let endpoint: Endpoint
     private let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 64)
     private var replies: [Reply] = []
-    private var isOpen = false
+    private var runLoop: CFRunLoop?
+
+    /// Replies are only listened for in this mode, so waiting for one never runs anything else
+    /// that is queued on the thread's run loop.
+    static let replyMode = CFRunLoopMode("dev.cobanov.atkctl.reply" as CFString)
 
     public static let timeout: TimeInterval = 0.5
     public static let attempts = 3
@@ -92,8 +100,9 @@ public final class HIDChannel {
         buffer.deallocate()
     }
 
+    /// Opens the device on the calling thread; use the channel from that thread only.
     public func open() throws {
-        guard !isOpen else { return }
+        guard runLoop == nil else { return }
         let device = endpoint.device
         let result = IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeNone))
         if result == kIOReturnExclusiveAccess { throw ATKError.exclusiveAccess(product: endpoint.product) }
@@ -109,17 +118,17 @@ public final class HIDChannel {
             }
             if let reply = Reply(report: bytes) { channel.replies.append(reply) }
         }, Unmanaged.passUnretained(self).toOpaque())
-        IOHIDDeviceScheduleWithRunLoop(device, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
-        isOpen = true
+        runLoop = CFRunLoopGetCurrent()
+        IOHIDDeviceScheduleWithRunLoop(device, runLoop!, Self.replyMode.rawValue)
     }
 
     public func close() {
-        guard isOpen else { return }
+        guard let runLoop else { return }
         // Callbacks pile up per device and outlive the close, so take ours off before this object goes away.
         IOHIDDeviceRegisterInputReportCallback(endpoint.device, buffer, 64, nil, Unmanaged.passUnretained(self).toOpaque())
-        IOHIDDeviceUnscheduleFromRunLoop(endpoint.device, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+        IOHIDDeviceUnscheduleFromRunLoop(endpoint.device, runLoop, Self.replyMode.rawValue)
         IOHIDDeviceClose(endpoint.device, IOOptionBits(kIOHIDOptionsTypeNone))
-        isOpen = false
+        self.runLoop = nil
     }
 
     public func transfer(_ command: Command, target: Packet.Target, payload: [UInt8] = []) throws -> Reply {
@@ -135,7 +144,7 @@ public final class HIDChannel {
             guard result == kIOReturnSuccess else { throw ATKError.sendFailed(command, result) }
             let deadline = Date().addingTimeInterval(Self.timeout)
             while Date() < deadline {
-                CFRunLoopRunInMode(.defaultMode, 0.01, true)
+                CFRunLoopRunInMode(Self.replyMode, 0.01, true)
                 if let reply = replies.first(where: { $0.command == command.rawValue }) {
                     if reply.isError { throw ATKError.deviceRejected(command) }
                     return reply

@@ -1,7 +1,7 @@
 import ATKKit
 import Foundation
 
-let version = "0.2.0"
+let version = "0.3.0"
 
 let usage = """
 atkctl \(version): configure ATK / VXE mice on macOS, without ATK Hub
@@ -24,6 +24,7 @@ settings:
   angle-snapping   on | off
   lift-off         0.7 to 1.7   (mm)
   dpi              <stage> <value>   e.g. `atkctl set dpi 2 1600`
+  dpi-stage        <stage>           make that stage the active one
 """
 
 func fail(_ message: String) -> Never {
@@ -166,6 +167,11 @@ func set(_ args: [String]) {
             }
             try s.setLiftOff(millimetres: mm)
             print("lift-off \(String(format: "%.1f", try s.config().liftOffMillimetres)) mm")
+        case "dpi-stage", "stage":
+            guard let stage = Int(args[1]) else { fail("usage: atkctl set dpi-stage <stage>") }
+            try s.selectDPIStage(stage - 1)
+            let table = try s.dpiTable()
+            print("dpi stage \(table.activeIndex + 1): \(table.active?.x ?? 0)")
         case "dpi":
             guard args.count == 3, let stage = Int(args[1]), let value = Int(args[2]) else {
                 fail("usage: atkctl set dpi <stage> <value>")

@@ -30,6 +30,16 @@ public enum ConnectionType: UInt8, Sendable {
         case .wired8K: "cable, 8K"
         }
     }
+
+    /// The fastest polling rate the link carries.
+    public var maxReportRate: ReportRate {
+        switch self {
+        case .receiver1K, .wired1K: .hz1000
+        case .receiver2K, .wired2K: .hz2000
+        case .receiver4K, .wired4K: .hz4000
+        case .receiver8K, .wired8K: .hz8000
+        }
+    }
 }
 
 /// The values the mouse reports for `getCurrentConfig`.
@@ -219,10 +229,23 @@ public final class Session {
         guard (50...26000).contains(value), value % 50 == 0 else {
             throw ATKError.invalidValue("DPI must be a multiple of 50 between 50 and 26000")
         }
-        let c = table.stages[index].color
-        let v = UInt16(value)
-        _ = try send(.setDPI, payload: [UInt8(index), UInt8(v & 0xFF), UInt8(v >> 8), UInt8(v & 0xFF), UInt8(v >> 8),
-                                        c.b, c.g, c.r, 0, index == table.activeIndex ? 1 : 0])
+        let old = table.stages[index]
+        try writeStage(index, DPIStage(x: value, y: value, color: old.color), active: index == table.activeIndex)
+    }
+
+    /// Makes another stage the active one, the way ATK Hub does: by rewriting that stage with its flag set.
+    public func selectDPIStage(_ index: Int) throws {
+        let table = try dpiTable()
+        guard table.stages.indices.contains(index) else {
+            throw ATKError.invalidValue("the mouse has \(table.stages.count) DPI stages")
+        }
+        try writeStage(index, table.stages[index], active: true)
+    }
+
+    private func writeStage(_ index: Int, _ stage: DPIStage, active: Bool) throws {
+        let x = UInt16(stage.x), y = UInt16(stage.y), c = stage.color
+        _ = try send(.setDPI, payload: [UInt8(index), UInt8(x & 0xFF), UInt8(x >> 8), UInt8(y & 0xFF), UInt8(y >> 8),
+                                        c.b, c.g, c.r, 0, active ? 1 : 0])
     }
 
     // MARK: pairing

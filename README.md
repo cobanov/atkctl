@@ -26,7 +26,17 @@ cp .build/release/atkctl ~/.local/bin/
 atkctl doctor
 ```
 
+For the menu bar app, `scripts/build-app.sh --install` builds `ATKBar.app` into `/Applications` and opens it.
+
 Needs macOS 13 or later and the Swift toolchain that comes with Xcode or the Command Line Tools. The mouse works through its receiver or its cable; with both plugged in, `atkctl` talks over the cable.
+
+## Menu bar app
+
+<img src="docs/atkbar.png" width="320" alt="ATKBar panel">
+
+`ATKBar` keeps the mouse's battery in the menu bar and sends a notification when it drops to 15%. Click it for the settings: DPI stage, polling rate, lift-off, sleep time, debounce, motion sync, ripple control and angle snapping. It reads the mouse again every minute, when the receiver is plugged in or out, and after the Mac wakes.
+
+On first launch macOS asks to allow ATKBar under Input Monitoring; it needs that to talk to the receiver. The app is signed ad hoc, so a rebuild asks again. Set `SIGN_IDENTITY` to a signing identity when building to keep the permission.
 
 ## Commands
 
@@ -48,6 +58,7 @@ Needs macOS 13 or later and the Swift toolchain that comes with Xcode or the Com
 | `motion-sync`, `ripple`, `angle-snapping` | `on` / `off` |
 | `lift-off` | `0.7` to `1.7` (mm, in 0.1 steps) |
 | `dpi` | `<stage> <value>`, for example `atkctl set dpi 2 1600` (both axes, multiples of 50) |
+| `dpi-stage` | `<stage>`, makes that stage the active one |
 
 Every setting is one ATK Hub can also change, and can be changed back from ATK Hub. Firmware updates are left to ATK Hub on purpose: they go through the bootloader, and a failed one can brick the mouse.
 
@@ -83,7 +94,8 @@ try session.setSleep(seconds: 120)
 ## Build from source
 
 ```bash
-swift build          # debug build in .build/debug/atkctl
+swift build          # debug builds of atkctl and ATKBar in .build/debug
+swift run ATKBar     # the menu bar app without an app bundle
 swift test           # protocol tests, using replies recorded from a real mouse
 ```
 
