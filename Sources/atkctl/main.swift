@@ -1,7 +1,7 @@
 import ATKKit
 import Foundation
 
-let version = "0.1.0"
+let version = "0.2.0"
 
 let usage = """
 atkctl \(version): configure ATK / VXE mice on macOS, without ATK Hub
@@ -13,6 +13,7 @@ usage:
   atkctl pair [--yes]            pair the mouse with the plugged-in receiver
   atkctl doctor [--fix-karabiner]  find what stops the mouse or ATK Hub working
   atkctl list                    connected devices
+  atkctl raw <cmd> [payload…]    one request, reply in hex (see docs/PROTOCOL.md)
 
 settings:
   sleep            30s 1m 2m 3m 5m 20m 25m 30m
@@ -21,6 +22,7 @@ settings:
   motion-sync      on | off
   ripple           on | off
   angle-snapping   on | off
+  lift-off         0.7 to 1.7   (mm)
   dpi              <stage> <value>   e.g. `atkctl set dpi 2 1600`
 """
 
@@ -80,10 +82,12 @@ func status(json: Bool) {
         let battery = try s.battery()
         let config = try s.config()
         let link = attempt { try s.connectionType() } ?? nil
+        let table = attempt { try s.dpiTable() }
         out["mouse"] = [
             "name": name, "firmware": firmware, "battery": battery.percent, "charging": battery.charging,
-            "connection": link?.label as Any, "polling_hz": config.reportRate?.rawValue as Any, "dpi": config.dpi,
-            "lift_off_level": config.liftOffLevel, "motion_sync": config.motionSync,
+            "connection": link?.label as Any, "polling_hz": config.reportRate?.rawValue as Any,
+            "dpi": table?.active?.x as Any, "dpi_stage": table.map { $0.activeIndex + 1 } as Any,
+            "lift_off_mm": config.liftOffMillimetres, "motion_sync": config.motionSync,
             "angle_snapping": config.angleSnapping, "ripple": config.rippleControl,
             "sleep_seconds": config.sleepSeconds, "debounce_ms": config.debounceMs,
         ]
@@ -91,8 +95,10 @@ func status(json: Bool) {
                      + (link.map { "   \($0.label)" } ?? ""))
         lines.append("")
         lines.append("  polling         \(config.reportRate.map { "\($0.rawValue) Hz" } ?? "?")")
-        lines.append("  dpi             \(config.dpi)")
-        lines.append("  lift-off level  \(config.liftOffLevel)")
+        if let table, let active = table.active {
+            lines.append("  dpi             \(active.x)   (stage \(table.activeIndex + 1) of \(table.stages.count))")
+        }
+        lines.append("  lift-off        \(String(format: "%.1f", config.liftOffMillimetres)) mm")
         lines.append("  sleep           \(duration(config.sleepSeconds))")
         lines.append("  debounce        \(config.debounceMs) ms")
         lines.append("  motion-sync     \(config.motionSync ? "on" : "off")")
@@ -154,6 +160,12 @@ func set(_ args: [String]) {
         case "angle-snapping":
             try s.setAngleSnapping(onOff(args[1]))
             print("angle-snapping \(try s.config().angleSnapping ? "on" : "off")")
+        case "lift-off", "lod":
+            guard let mm = Double(args[1].lowercased().replacingOccurrences(of: "mm", with: "")) else {
+                fail("lift-off is in mm, 0.7 to 1.7")
+            }
+            try s.setLiftOff(millimetres: mm)
+            print("lift-off \(String(format: "%.1f", try s.config().liftOffMillimetres)) mm")
         case "dpi":
             guard args.count == 3, let stage = Int(args[1]), let value = Int(args[2]) else {
                 fail("usage: atkctl set dpi <stage> <value>")
@@ -202,6 +214,23 @@ func doctor(fix: Bool) {
     if failed { exit(1) }
 }
 
+/// `atkctl raw 09` or `atkctl raw 17 01 00 0a`: one request, the reply in hex. For working out other models.
+func raw(_ args: [String]) {
+    guard let first = args.first, let code = UInt8(first, radix: 16), let command = Command(rawValue: code) else {
+        fail("usage: atkctl raw <command hex> [payload hex…]; commands are listed in docs/PROTOCOL.md")
+    }
+    let payload = args.dropFirst().map { byte -> UInt8 in
+        guard let value = UInt8(byte, radix: 16) else { fail("not a hex byte: \(byte)") }
+        return value
+    }
+    do {
+        let reply = try session().send(command, payload: payload)
+        print(reply.bytes.map { String(format: "%02x", $0) }.joined(separator: " "))
+    } catch {
+        fail("\(error)")
+    }
+}
+
 func list() {
     let endpoints = Endpoint.discover()
     if endpoints.isEmpty { fail("no ATK / VXE mouse or receiver found") }
@@ -223,6 +252,7 @@ case "set": set(Array(args.dropFirst()))
 case "pair": pair(yes: flags.contains("--yes"))
 case "doctor": doctor(fix: flags.contains("--fix-karabiner"))
 case "list": list()
+case "raw": raw(Array(args.dropFirst()))
 case "version": print(version)
 case "help": print(usage)
 default:

@@ -27,11 +27,13 @@ public enum Doctor {
         }
 
         var grabbed: [Endpoint] = []
-        for endpoint in endpoints {
+        let channels = endpoints.map(HIDChannel.init)
+        for channel in channels {
+            let endpoint = channel.endpoint
             let name = "\(endpoint.product) (0x\(String(endpoint.productID, radix: 16)))"
             let tested = endpoint.isTested ? "" : ", untested model"
             do {
-                try HIDChannel(endpoint).open()
+                try channel.open()
                 findings.append(Finding(level: .ok, message: "\(name) reachable\(tested)", fix: nil))
             } catch ATKError.exclusiveAccess {
                 grabbed.append(endpoint)
@@ -53,7 +55,7 @@ public enum Doctor {
         }
         guard grabbed.isEmpty else { return findings }
 
-        let session = Session(endpoints: endpoints)
+        let session = Session(channels: channels)
         var mouseVersion: String?
         var receiverVersion: String?
         if session.receiver != nil {

@@ -29,6 +29,7 @@ Through a receiver, mouse commands are sent with target `1` and the receiver for
 |---|---|---|---|---|
 | `0x01` | set report rate | 3 / 1 | rate code | |
 | `0x02` | set DPI stage | 12 / 10 | index, x u16, y u16, blue, green, red, 0, active | |
+| `0x03` | set lift-off | 4 / 2 | 0, level − 1 | |
 | `0x07` | battery level | 2 / 1 | | percent |
 | `0x09` | current config | 19 / 17 | | see below |
 | `0x0B` | angle snapping | 3 / 1 | 0 / 1 | |
@@ -52,11 +53,17 @@ All integers are little-endian.
 
 **Connection type:** `0` receiver 1K, `1` receiver 4K, `2` cable 1K, `3` cable 8K, `4` receiver 2K, `5` receiver 8K, `6` cable 2K, `7` cable 4K.
 
-**Current config (`0x09`)**, offsets from byte 7: `0` profile, `1` version, `2` report rate code, `3–4` DPI, `5` lift-off level − 1, `6` motion sync, `7` angle snapping, `8` ripple control, `9–10` sleep seconds, `11` debounce ms, `12–16` button types.
+**Current config (`0x09`)**, offsets from byte 7: `0` profile, `1` version, `2` report rate code, `5` lift-off level − 1, `6` motion sync, `7` angle snapping, `8` ripple control, `9–10` sleep seconds, `11` debounce ms, `12–16` button types. ATK Hub names bytes `3–4` DPI and lift-off height but does not use them; on the A9 Plus NK they read `01 00` whatever the DPI. Take the DPI from the DPI table.
 
-**DPI table:** 70 bytes of settings memory from address `1`, read in seven 10-byte blocks. Byte `0` is the active stage, `1` the number of stages, then up to eight 8-byte stages: x u16, y u16, blue, green, red, alpha.
+**Lift-off level:** `1` to `11`, which ATK Hub shows as 0.7 to 1.7 mm in 0.1 mm steps (level 6 is 1.2 mm). Models with a two-way switch use `1` for 1 mm and `2` for 2 mm.
+
+**DPI table:** 70 bytes of settings memory from address `1`, read in seven 10-byte blocks. Byte `0` is the active stage (from 0), `1` the number of slots (8), then eight 8-byte slots: x u16, y u16, blue, green, red, alpha. The stages in use are the leading slots with a non-zero value. When ATK Hub changes one stage it sends `0x02` with `active` set only for the current stage.
 
 **Pairing:** ATK Hub sends forget (`0x83`) then start (`0x82`) to the receiver, then polls `0x81` until the mouse connects. The mouse enters pairing mode when left, right and wheel are held together.
+
+## Trying commands
+
+`atkctl raw <command> [payload…]` sends one request, routed like the others, and prints the reply. `atkctl raw 09` dumps the current config; `atkctl raw 17 01 00 0a` reads the first block of the DPI table.
 
 ## Not covered
 

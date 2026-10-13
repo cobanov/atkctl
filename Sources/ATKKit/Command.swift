@@ -3,6 +3,7 @@ public enum Command: UInt8, Sendable, CaseIterable {
     // mouse
     case setReportRate = 0x01
     case setDPI = 0x02
+    case setLiftOff = 0x03
     case getBatteryLevel = 0x07
     case getCurrentConfig = 0x09
     case setLinearCorrection = 0x0B
@@ -30,6 +31,7 @@ public enum Command: UInt8, Sendable, CaseIterable {
              .getReceiverConnectStatus, .getPairStatus:
             return (3, 1)
         case .startPairing, .clearPairing: return (3, 0)
+        case .setLiftOff: return (4, 2)
         case .setSleepTime: return (5, 2)
         case .getFirmwareVersion, .getReceiverVersion: return (5, 3)
         case .getChargeRemainingTime: return (6, 4)

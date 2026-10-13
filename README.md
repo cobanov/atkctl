@@ -5,13 +5,13 @@ Configure ATK and VXE mice on macOS from the terminal, without ATK Hub. It reads
 ```
 $ atkctl
 NK mouse NANO dongle      firmware 1.0.19   connected
-ATK A9 PLUS 2.0 NK        firmware 1.0.14   battery 100%   receiver, 1K
+mouse (via receiver)      firmware 1.0.14   battery 100%   receiver, 1K
 
   polling         1000 Hz
-  dpi             800
-  lift-off level  1
-  sleep           30 s
-  debounce        8 ms
+  dpi             1600   (stage 3 of 4)
+  lift-off        1.2 mm
+  sleep           2 min
+  debounce        4 ms
   motion-sync     on
   ripple          off
   angle-snapping  off
@@ -38,6 +38,7 @@ Needs macOS 13 or later and the Swift toolchain that comes with Xcode or the Com
 | `atkctl pair [--yes]` | Pairs the mouse with the plugged-in receiver (forgets the old pairing) |
 | `atkctl doctor [--fix-karabiner]` | Finds what stops the mouse or ATK Hub from working |
 | `atkctl list` | Connected ATK / VXE devices |
+| `atkctl raw <command> [payload…]` | Sends one request and prints the reply in hex, for working out other models |
 
 | Setting | Values |
 |---|---|
@@ -45,6 +46,7 @@ Needs macOS 13 or later and the Swift toolchain that comes with Xcode or the Com
 | `polling` | `125` `250` `500` `1000` `2000` `4000` `8000` (what the mouse and receiver support) |
 | `debounce` | `0` `1` `2` `4` `8` `15` `20` (ms) |
 | `motion-sync`, `ripple`, `angle-snapping` | `on` / `off` |
+| `lift-off` | `0.7` to `1.7` (mm, in 0.1 steps) |
 | `dpi` | `<stage> <value>`, for example `atkctl set dpi 2 1600` (both axes, multiples of 50) |
 
 Every setting is one ATK Hub can also change, and can be changed back from ATK Hub. Firmware updates are left to ATK Hub on purpose: they go through the bootloader, and a failed one can brick the mouse.
@@ -55,6 +57,7 @@ Every setting is one ATK Hub can also change, and can be changed back from ATK H
 
 - **Karabiner-Elements grabs the receiver.** The receiver reports itself as a keyboard as well as a mouse, so Karabiner takes it over and nothing else can talk to it. ATK Hub then fails with *Device initialization failed* and pairing never starts. `atkctl doctor --fix-karabiner` adds an ignore rule for it (and backs up `karabiner.json`); unplug and replug the receiver afterwards.
 - **Secure Input is on.** While the screen is locked, or a password field has focus, macOS refuses to send reports to devices that act as keyboards, the receiver included. Unlock and run the command again.
+- **Input Monitoring is not allowed.** macOS asks before a program may open input devices. If `atkctl` reports that access was denied, allow your terminal app under System Settings › Privacy & Security › Input Monitoring.
 - **The receiver has no mouse.** The receiver answers, but no mouse is paired or connected: run `atkctl pair`.
 - **Firmware mismatch.** Mouse and receiver need the same major firmware version to pair.
 
@@ -73,6 +76,7 @@ import ATKKit
 
 let session = Session()
 print(try session.firmwareVersion(), try session.battery().percent)
+print(try session.dpiTable().active?.x ?? 0)
 try session.setSleep(seconds: 120)
 ```
 

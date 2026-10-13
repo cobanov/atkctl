@@ -36,7 +36,7 @@ public enum ConnectionType: UInt8, Sendable {
 public struct MouseConfig: Equatable, Sendable {
     public let profile: Int
     public let reportRate: ReportRate?
-    public let dpi: Int
+    /// 1 to 11; ATK Hub shows it as 0.7 to 1.7 mm.
     public let liftOffLevel: Int
     public let motionSync: Bool
     public let angleSnapping: Bool
@@ -47,7 +47,7 @@ public struct MouseConfig: Equatable, Sendable {
     public init(_ r: Reply) {
         profile = Int(r.u8(0))
         reportRate = ReportRate(code: r.u8(2))
-        dpi = Int(r.u16(3))
+        // Bytes 3 and 4 are not what ATK Hub's names for them say (DPI, lift-off); it ignores them, and so do we.
         liftOffLevel = Int(r.u8(5)) + 1
         motionSync = r.u8(6) != 0
         angleSnapping = r.u8(7) != 0
@@ -55,6 +55,10 @@ public struct MouseConfig: Equatable, Sendable {
         sleepSeconds = Int(r.u16(9))
         debounceMs = Int(r.u8(11))
     }
+
+    public var liftOffMillimetres: Double { MouseConfig.millimetres(liftOffLevel) }
+
+    static func millimetres(_ level: Int) -> Double { Double(6 + level) / 10 }
 }
 
 public struct DPIStage: Equatable, Sendable {
@@ -68,20 +72,25 @@ public struct DPIStage: Equatable, Sendable {
 }
 
 /// The DPI table kept at address 1 of the mouse's settings memory.
+/// Byte 1 is the number of slots (8); the stages in use are the ones with a value.
 public struct DPITable: Equatable, Sendable {
     public let activeIndex: Int
     public let stages: [DPIStage]
 
+    public var active: DPIStage? { stages.indices.contains(activeIndex) ? stages[activeIndex] : nil }
+
     public init(_ bytes: [UInt8]) {
         activeIndex = Int(bytes[0])
-        let count = min(Int(bytes[1]), 8)
-        stages = (0..<count).map { i in
+        let slots = min(Int(bytes[1]), 8)
+        stages = (0..<slots).map { i in
             let o = 2 + i * 8
             return DPIStage(
                 x: Int(bytes[o]) | Int(bytes[o + 1]) << 8,
                 y: Int(bytes[o + 2]) | Int(bytes[o + 3]) << 8,
                 color: (r: bytes[o + 6], g: bytes[o + 5], b: bytes[o + 4]))
         }
+        .prefix { $0.x > 0 }
+        .map { $0 }
     }
 }
 
@@ -101,14 +110,20 @@ public final class Session {
     public let mouse: HIDChannel?
     public let receiver: HIDChannel?
 
-    public init(endpoints: [Endpoint] = Endpoint.discover()) {
-        mouse = endpoints.first { !$0.isReceiver }.map(HIDChannel.init)
-        receiver = endpoints.first { $0.isReceiver }.map(HIDChannel.init)
+    public convenience init(endpoints: [Endpoint] = Endpoint.discover()) {
+        self.init(channels: endpoints.map(HIDChannel.init))
+    }
+
+    /// One channel per device: a second channel on the same device would see the first one's replies.
+    public init(channels: [HIDChannel]) {
+        mouse = channels.first { !$0.endpoint.isReceiver }
+        receiver = channels.first { $0.endpoint.isReceiver }
     }
 
     public var isEmpty: Bool { mouse == nil && receiver == nil }
 
-    func send(_ command: Command, payload: [UInt8] = []) throws -> Reply {
+    /// Sends a command to whichever device answers it, routing mouse commands through the receiver if needed.
+    public func send(_ command: Command, payload: [UInt8] = []) throws -> Reply {
         if command.isReceiverCommand {
             guard let channel = receiver ?? mouse else { throw ATKError.notConnected("no ATK / VXE device found") }
             return try channel.transfer(command, target: .device, payload: payload)
@@ -182,6 +197,13 @@ public final class Session {
             throw ATKError.invalidValue("debounce must be one of 0, 1, 2, 4, 8, 15, 20 ms")
         }
         _ = try send(.setDebounceTime, payload: [UInt8(ms)])
+    }
+
+    /// Lift-off distance in tenths of a millimetre steps, 0.7 to 1.7 mm, as ATK Hub's slider sets it.
+    public func setLiftOff(millimetres: Double) throws {
+        let level = Int((millimetres * 10).rounded()) - 6
+        guard (1...11).contains(level) else { throw ATKError.invalidValue("lift-off must be 0.7 to 1.7 mm") }
+        _ = try send(.setLiftOff, payload: [0, UInt8(level - 1)])
     }
 
     public func setMotionSync(_ on: Bool) throws { _ = try send(.setMotionSync, payload: [on ? 1 : 0]) }

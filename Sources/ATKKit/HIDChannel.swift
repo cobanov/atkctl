@@ -46,6 +46,7 @@ public struct Endpoint {
 public enum ATKError: Error, CustomStringConvertible {
     case exclusiveAccess(product: String)
     case secureInput
+    case inputMonitoring
     case openFailed(product: String, code: IOReturn)
     case sendFailed(Command, IOReturn)
     case noReply(Command)
@@ -59,6 +60,8 @@ public enum ATKError: Error, CustomStringConvertible {
             return "\(p) is held exclusively by another process (often Karabiner-Elements); run `atkctl doctor`"
         case .secureInput:
             return "macOS is blocking keyboard-class devices because Secure Input is on (screen locked or a password field focused); unlock and try again"
+        case .inputMonitoring:
+            return "macOS denied access to the device: allow your terminal app under System Settings › Privacy & Security › Input Monitoring"
         case .openFailed(let p, let code): return "could not open \(p): IOReturn 0x\(String(UInt32(bitPattern: code), radix: 16))"
         case .sendFailed(let c, let code): return "sending \(c) failed: IOReturn 0x\(String(UInt32(bitPattern: code), radix: 16))"
         case .noReply(let c): return "no reply to \(c)"
@@ -94,6 +97,7 @@ public final class HIDChannel {
         let device = endpoint.device
         let result = IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeNone))
         if result == kIOReturnExclusiveAccess { throw ATKError.exclusiveAccess(product: endpoint.product) }
+        if result == kIOReturnNotPermitted { throw ATKError.inputMonitoring }
         guard result == kIOReturnSuccess else { throw ATKError.openFailed(product: endpoint.product, code: result) }
         IOHIDDeviceRegisterInputReportCallback(device, buffer, 64, { context, _, _, _, reportID, report, length in
             guard let context else { return }
@@ -111,6 +115,8 @@ public final class HIDChannel {
 
     public func close() {
         guard isOpen else { return }
+        // Callbacks pile up per device and outlive the close, so take ours off before this object goes away.
+        IOHIDDeviceRegisterInputReportCallback(endpoint.device, buffer, 64, nil, Unmanaged.passUnretained(self).toOpaque())
         IOHIDDeviceUnscheduleFromRunLoop(endpoint.device, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
         IOHIDDeviceClose(endpoint.device, IOOptionBits(kIOHIDOptionsTypeNone))
         isOpen = false
