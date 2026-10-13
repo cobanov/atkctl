@@ -28,6 +28,10 @@ struct ATKBarApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: StatusPanel?
     private var subscriptions: Set<AnyCancellable> = []
+    /// The style the status item was last shown for. Kept here rather than read back from
+    /// `isVisible`: writing that saves to UserDefaults, which calls update() again before the
+    /// new value can be read, and the two kept calling each other until the stack ran out.
+    private var shownMinimal: Bool?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // LSUIElement does this in the app bundle; this covers `swift run ATKBar`.
@@ -57,8 +61,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let model = MouseModel.shared
         let minimal = PanelStyle(rawValue: UserDefaults.standard.string(forKey: PanelStyle.key) ?? "") != .classic
         if !minimal { panel.close() }
-        // Writing isVisible touches UserDefaults, which calls update() again; only write on a change.
-        if panel.statusItem.isVisible != minimal { panel.statusItem.isVisible = minimal }
+        if shownMinimal != minimal {
+            shownMinimal = minimal
+            panel.statusItem.isVisible = minimal
+        }
         guard let button = panel.statusItem.button else { return }
         let image = NSImage(systemSymbolName: model.menuIcon, accessibilityDescription: "Mouse")
         image?.isTemplate = true
