@@ -22,6 +22,8 @@ final class MouseModel: ObservableObject {
     private var pendingWrites = 0
     private var isPreview = false
     @Published private(set) var openAtLogin = false
+    /// While set, the panel shows this in-memory mouse and nothing is sent to a device.
+    @Published private(set) var demo: DemoMouse?
 
     static let lowBattery = 15
     private let device = DeviceThread()
@@ -56,6 +58,8 @@ final class MouseModel: ObservableObject {
 
     // MARK: menu bar
 
+    var isDemo: Bool { demo != nil }
+
     var menuTitle: String {
         guard let battery = snapshot.battery else { return "" }
         return "\(battery.percent)%"
@@ -68,7 +72,23 @@ final class MouseModel: ObservableObject {
     // MARK: reading
 
     func refresh(rescan: Bool = false) {
+        guard demo == nil else { return }
         run(write: false) { try $0.read(rescan: rescan) }
+    }
+
+    func startDemo() {
+        let mouse = DemoMouse()
+        demo = mouse
+        snapshot = mouse.snapshot
+        problem = nil
+        needsInputMonitoring = false
+    }
+
+    func stopDemo() {
+        demo = nil
+        snapshot = Snapshot()
+        problem = nil
+        refresh(rescan: true)
     }
 
     private func scheduleRescan() {
@@ -92,6 +112,7 @@ final class MouseModel: ObservableObject {
     }
 
     private func finish(_ result: Result<Snapshot, Error>) {
+        guard demo == nil else { return }  // a read that was under way when the demo started
         switch result {
         case .success(var snap):
             if !snap.hasMouse, snap.receiverName != nil, snapshot.hasMouse {
@@ -132,14 +153,24 @@ final class MouseModel: ObservableObject {
         run(write: true) { try $0.apply(change) }
     }
 
-    func selectStage(_ index: Int) { apply { try $0.selectDPIStage(index) } }
-    func setReportRate(_ rate: ReportRate) { apply { try $0.setReportRate(rate) } }
-    func setLiftOff(_ millimetres: Double) { apply { try $0.setLiftOff(millimetres: millimetres) } }
-    func setSleep(_ seconds: Int) { apply { try $0.setSleep(seconds: seconds) } }
-    func setDebounce(_ ms: Int) { apply { try $0.setDebounce(ms: ms) } }
-    func setMotionSync(_ on: Bool) { apply { try $0.setMotionSync(on) } }
-    func setRipple(_ on: Bool) { apply { try $0.setRippleControl(on) } }
-    func setAngleSnapping(_ on: Bool) { apply { try $0.setAngleSnapping(on) } }
+    /// Changes the demo mouse when there is one, the real mouse otherwise.
+    private func change(_ demoChange: (inout DemoMouse) -> Void, _ change: @escaping (Session) throws -> Void) {
+        guard var mouse = demo else { return apply(change) }
+        demoChange(&mouse)
+        demo = mouse
+        snapshot = mouse.snapshot
+    }
+
+    func selectStage(_ index: Int) { change({ $0.activeStage = index }) { try $0.selectDPIStage(index) } }
+    func setReportRate(_ rate: ReportRate) { change({ $0.rate = rate }) { try $0.setReportRate(rate) } }
+    func setLiftOff(_ millimetres: Double) {
+        change({ $0.liftOffLevel = Int((millimetres * 10).rounded()) - 6 }) { try $0.setLiftOff(millimetres: millimetres) }
+    }
+    func setSleep(_ seconds: Int) { change({ $0.sleepSeconds = seconds }) { try $0.setSleep(seconds: seconds) } }
+    func setDebounce(_ ms: Int) { change({ $0.debounceMs = ms }) { try $0.setDebounce(ms: ms) } }
+    func setMotionSync(_ on: Bool) { change({ $0.motionSync = on }) { try $0.setMotionSync(on) } }
+    func setRipple(_ on: Bool) { change({ $0.ripple = on }) { try $0.setRippleControl(on) } }
+    func setAngleSnapping(_ on: Bool) { change({ $0.angleSnapping = on }) { try $0.setAngleSnapping(on) } }
 
     // MARK: app
 

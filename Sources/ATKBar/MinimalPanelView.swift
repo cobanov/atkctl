@@ -52,9 +52,14 @@ struct MinimalPanelView: View {
                 .font(Theme.font(14, .medium))
                 .foregroundStyle(.orange)
                 .fixedSize(horizontal: false, vertical: true)
-            if model.needsInputMonitoring {
-                Button("Open Input Monitoring Settings") { model.openInputMonitoringSettings() }
-                    .buttonStyle(PillButtonStyle())
+            HStack(spacing: 8) {
+                if model.needsInputMonitoring {
+                    Button("Open Input Monitoring Settings") { model.openInputMonitoringSettings() }
+                        .buttonStyle(PillButtonStyle())
+                }
+                if !snap.hasMouse {
+                    Button("Try Demo") { model.startDemo() }.buttonStyle(PillButtonStyle())
+                }
             }
         }
     }
@@ -116,7 +121,7 @@ struct MinimalPanelView: View {
 
     private var footer: some View {
         HStack(spacing: 8) {
-            Image(systemName: snap.hasMouse && !snap.asleep ? "checkmark.shield" : "moon.zzz")
+            Image(systemName: statusIcon)
                 .font(.system(size: 15))
             Text(status)
                 .font(Theme.font(14, .medium))
@@ -127,6 +132,7 @@ struct MinimalPanelView: View {
                 ChoiceMenu.show([
                     (title: "Refresh", checked: false, run: { model.refresh(rescan: true) }),
                     (title: "Open at Login", checked: model.openAtLogin, run: { model.setOpenAtLogin(!model.openAtLogin) }),
+                    (title: "Demo Mode", checked: model.isDemo, run: { model.isDemo ? model.stopDemo() : model.startDemo() }),
                     (title: "Classic Design", checked: false, run: showClassic),
                     (title: "-", checked: false, run: {}),
                     (title: "Quit ATKBar", checked: false, run: { NSApplication.shared.terminate(nil) }),
@@ -142,11 +148,19 @@ struct MinimalPanelView: View {
     // MARK: helpers
 
     private var status: String {
+        if model.isDemo { return "Demo · nothing is sent to a mouse" }
         if snap.asleep { return "Mouse asleep" }
         if snap.hasMouse {
             return ["Connected", snap.link?.label].compactMap { $0 }.joined(separator: " · ")
         }
         return snap.receiverName == nil ? "No receiver" : "Receiver has no mouse"
+    }
+
+    private var statusIcon: String {
+        if model.isDemo { return "play.circle" }
+        if snap.asleep { return "moon.zzz" }
+        if snap.hasMouse { return "checkmark.shield" }
+        return "antenna.radiowaves.left.and.right.slash"
     }
 
     private var reportRates: [ReportRate] {

@@ -31,6 +31,12 @@ struct PanelView: View {
                 if model.busy { ProgressView().controlSize(.small) }
                 if let battery = snap.battery { BatteryBadge(battery: battery) }
             }
+            if model.isDemo {
+                HStack {
+                    Text("Demo: nothing is sent to a mouse").font(.caption).foregroundStyle(.orange)
+                    Button("Exit Demo") { model.stopDemo() }.controlSize(.mini)
+                }
+            }
             if let receiver = snap.receiverName {
                 Text([receiver, snap.receiverConnected ? "connected" : "no mouse", snap.link?.label]
                     .compactMap { $0 }.joined(separator: " · "))
@@ -52,6 +58,9 @@ struct PanelView: View {
             if model.needsInputMonitoring {
                 Button("Open Input Monitoring Settings") { model.openInputMonitoringSettings() }
                     .controlSize(.small)
+            }
+            if !snap.hasMouse {
+                Button("Try Demo") { model.startDemo() }.controlSize(.small)
             }
         }
     }

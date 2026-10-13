@@ -36,6 +36,8 @@ Needs macOS 13 or later and the Swift toolchain that comes with Xcode or the Com
 
 `ATKBar` keeps the mouse's battery in the menu bar and sends a notification when it drops to 15%. Click it for the settings: DPI stage, polling rate, lift-off, sleep time, debounce, motion sync, ripple control and angle snapping. It reads the mouse again every minute, each time the panel opens, when the receiver is plugged in or out, and after the Mac wakes. While the mouse sleeps the panel keeps its last values.
 
+With no mouse plugged in, **Try Demo** (or Demo Mode in the settings menu) shows an in-memory mouse whose settings change in the panel only.
+
 The panel comes in two designs: the dark one (left) and the classic macOS one (right). Switch from the dark panel's settings menu, or with the sparkles button in the classic one. The dark panel hangs from the menu bar by its own arrow; [`StatusPanel.swift`](Sources/ATKBar/StatusPanel.swift) holds that part and depends on nothing else in the app.
 
 On first launch macOS asks to allow ATKBar under Input Monitoring; it needs that to talk to the receiver. The app is signed ad hoc, so a rebuild asks again. Set `SIGN_IDENTITY` to a signing identity when building to keep the permission.
