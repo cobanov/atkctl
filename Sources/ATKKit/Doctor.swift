@@ -67,8 +67,8 @@ public enum Doctor {
                 } else if session.mouse == nil {
                     findings.append(Finding(
                         level: .fail,
-                        message: "receiver \(receiverVersion!) has no mouse connected (\(status.paired ? "paired, mouse asleep or off" : "not paired"))",
-                        fix: status.paired ? "switch the mouse on and move it" : "run `atkctl pair`"))
+                        message: "receiver \(receiverVersion!) has no mouse connected",
+                        fix: "move the mouse to wake it; if it stays off, run `atkctl pair`"))
                 }
             } catch {
                 findings.append(Finding(level: .warn, message: "receiver: \(error)", fix: nil))

@@ -32,9 +32,11 @@ Needs macOS 13 or later and the Swift toolchain that comes with Xcode or the Com
 
 ## Menu bar app
 
-<img src="docs/atkbar.png" width="320" alt="ATKBar panel">
+<img src="docs/atkbar.png" width="340" alt="ATKBar panel"> <img src="docs/atkbar-classic.png" width="290" alt="ATKBar classic panel">
 
-`ATKBar` keeps the mouse's battery in the menu bar and sends a notification when it drops to 15%. Click it for the settings: DPI stage, polling rate, lift-off, sleep time, debounce, motion sync, ripple control and angle snapping. It reads the mouse again every minute, when the receiver is plugged in or out, and after the Mac wakes.
+`ATKBar` keeps the mouse's battery in the menu bar and sends a notification when it drops to 15%. Click it for the settings: DPI stage, polling rate, lift-off, sleep time, debounce, motion sync, ripple control and angle snapping. It reads the mouse again every minute, each time the panel opens, when the receiver is plugged in or out, and after the Mac wakes. While the mouse sleeps the panel keeps its last values.
+
+The panel comes in two designs: the dark one (left) and the classic macOS one (right). Switch from the dark panel's settings menu, or with the sparkles button in the classic one. The dark panel hangs from the menu bar by its own arrow; [`StatusPanel.swift`](Sources/ATKBar/StatusPanel.swift) holds that part and depends on nothing else in the app.
 
 On first launch macOS asks to allow ATKBar under Input Monitoring; it needs that to talk to the receiver. The app is signed ad hoc, so a rebuild asks again. Set `SIGN_IDENTITY` to a signing identity when building to keep the permission.
 
@@ -96,6 +98,7 @@ try session.setSleep(seconds: 120)
 ```bash
 swift build          # debug builds of atkctl and ATKBar in .build/debug
 swift run ATKBar     # the menu bar app without an app bundle
+swift run ATKBar --render-preview panel.png   # draws the dark panel with recorded values
 swift test           # protocol tests, using replies recorded from a real mouse
 ```
 

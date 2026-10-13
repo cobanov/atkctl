@@ -4,12 +4,23 @@ import IOKit.hid
 import ServiceManagement
 import UserNotifications
 
+/// Which panel the menu bar item opens.
+enum PanelStyle: String {
+    case minimal, classic
+    static let key = "panelStyle"
+}
+
 @MainActor
 final class MouseModel: ObservableObject {
+    static let shared = MouseModel()
+
     @Published private(set) var snapshot = Snapshot()
     @Published private(set) var problem: String?
     @Published private(set) var needsInputMonitoring = false
+    /// A setting is being written; controls wait for it. Background reads do not set this.
     @Published private(set) var busy = false
+    private var pendingWrites = 0
+    private var isPreview = false
     @Published private(set) var openAtLogin = false
 
     static let lowBattery = 15
@@ -20,6 +31,12 @@ final class MouseModel: ObservableObject {
     private var pendingRescan: DispatchWorkItem?
     private var warnedLow = false
     private let bundled = Bundle.main.bundleIdentifier != nil
+
+    /// Shows `snapshot` and never touches the hardware; for `--render-preview`.
+    init(preview snapshot: Snapshot) {
+        self.snapshot = snapshot
+        isPreview = true
+    }
 
     init() {
         if bundled {
@@ -45,13 +62,13 @@ final class MouseModel: ObservableObject {
     }
 
     var menuIcon: String {
-        snapshot.hasMouse ? "computermouse.fill" : "computermouse"
+        snapshot.hasMouse && !snapshot.asleep ? "computermouse.fill" : "computermouse"
     }
 
     // MARK: reading
 
     func refresh(rescan: Bool = false) {
-        run { try $0.read(rescan: rescan) }
+        run(write: false) { try $0.read(rescan: rescan) }
     }
 
     private func scheduleRescan() {
@@ -61,23 +78,39 @@ final class MouseModel: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: work)
     }
 
-    private func run(_ job: @escaping (Backend) throws -> Snapshot) {
-        busy = true
+    private func run(write: Bool, _ job: @escaping (Backend) throws -> Snapshot) {
+        guard !isPreview else { return }
+        if write { pendingWrites += 1; busy = true }
         let backend = backend
         device.perform {
             let result = Result { try job(backend) }
-            DispatchQueue.main.async { self.finish(result) }
+            DispatchQueue.main.async {
+                if write { self.pendingWrites -= 1; self.busy = self.pendingWrites > 0 }
+                self.finish(result)
+            }
         }
     }
 
     private func finish(_ result: Result<Snapshot, Error>) {
-        busy = false
         switch result {
-        case .success(let snap):
+        case .success(var snap):
+            if !snap.hasMouse, snap.receiverName != nil, snapshot.hasMouse {
+                // The mouse is asleep: keep what it said last.
+                snap.mouseName = snapshot.mouseName
+                snap.mouseFirmware = snapshot.mouseFirmware
+                snap.battery = snapshot.battery
+                snap.link = snapshot.link
+                snap.config = snapshot.config
+                snap.dpi = snapshot.dpi
+                snap.asleep = true
+            }
             snapshot = snap
-            problem = snap.receiverName != nil && !snap.receiverConnected
-                ? "The receiver has no mouse. Switch the mouse on and move it, or run atkctl pair in a terminal."
-                : nil
+            if snap.receiverName != nil && !snap.receiverConnected {
+                // The receiver cannot tell an asleep mouse from a forgotten one.
+                problem = "No mouse connected. Move the mouse to wake it; if it stays off, pair it with atkctl pair."
+            } else {
+                problem = nil
+            }
             needsInputMonitoring = false
             watchBattery()
         case .failure(ATKError.secureInput):
@@ -96,7 +129,7 @@ final class MouseModel: ObservableObject {
     // MARK: settings
 
     func apply(_ change: @escaping (Session) throws -> Void) {
-        run { try $0.apply(change) }
+        run(write: true) { try $0.apply(change) }
     }
 
     func selectStage(_ index: Int) { apply { try $0.selectDPIStage(index) } }

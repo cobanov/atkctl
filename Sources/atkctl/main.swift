@@ -73,7 +73,7 @@ func status(json: Bool) {
         let st = attempt { try s.receiverStatus() }
         out["receiver"] = ["name": r.endpoint.product, "firmware": version as Any,
                            "connected": st?.connected as Any, "paired": st?.paired as Any]
-        let state = st.map { $0.connected ? "connected" : ($0.paired ? "paired, mouse not connected" : "not paired") } ?? "?"
+        let state = st.map { $0.connected ? "connected" : "no mouse connected (asleep, off or not paired)" } ?? "?"
         lines.append(pad(r.endpoint.product) + "firmware \(version ?? "?")   \(state)")
     }
 

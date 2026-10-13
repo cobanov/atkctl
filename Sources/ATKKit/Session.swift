@@ -107,10 +107,17 @@ public struct DPITable: Equatable, Sendable {
 public struct Battery: Sendable {
     public let percent: Int
     public let charging: Bool
+
+    public init(percent: Int, charging: Bool) {
+        self.percent = percent
+        self.charging = charging
+    }
 }
 
 public struct ReceiverStatus: Sendable {
     public let connected: Bool
+    /// What `0x84` reports. It reads 0 while the mouse sleeps too, so it does not say whether
+    /// the receiver remembers a mouse; ATK Hub only reads it while pairing.
     public let paired: Bool
 }
 

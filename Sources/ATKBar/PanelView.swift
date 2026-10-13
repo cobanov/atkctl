@@ -111,7 +111,7 @@ struct PanelView: View {
             toggle("Ripple control", config.rippleControl, model.setRipple)
             toggle("Angle snapping", config.angleSnapping, model.setAngleSnapping)
         }
-        .disabled(model.busy)
+        .disabled(model.busy || snap.asleep)
         .onAppear { liftOff = config.liftOffMillimetres }
     }
 
@@ -134,6 +134,11 @@ struct PanelView: View {
                 .toggleStyle(.checkbox)
                 .font(.callout)
             Spacer()
+            Button { UserDefaults.standard.set(PanelStyle.minimal.rawValue, forKey: PanelStyle.key) } label: {
+                Image(systemName: "sparkles")
+            }
+            .buttonStyle(.borderless)
+            .help("Switch to the minimal design")
             Button { model.refresh(rescan: true) } label: { Image(systemName: "arrow.clockwise") }
                 .buttonStyle(.borderless)
                 .help("Read the mouse again")

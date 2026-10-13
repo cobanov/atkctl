@@ -33,6 +33,8 @@ struct Snapshot {
     var receiverName: String?
     var receiverFirmware: String?
     var receiverConnected = false
+    /// The mouse did not answer; the mouse values are the last ones read.
+    var asleep = false
     var mouseName = "ATK mouse"
     var mouseFirmware: String?
     var battery: Battery?
