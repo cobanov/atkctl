@@ -193,16 +193,30 @@ enum ChoiceMenu {
         menu.popUp(positioning: selected, at: NSEvent.mouseLocation, in: nil)
     }
 
-    static func show(_ items: [(title: String, checked: Bool, run: () -> Void)]) {
+    enum Entry {
+        case action(String, checked: Bool = false, () -> Void)
+        case header(String)
+        case separator
+    }
+
+    static func show(_ entries: [Entry]) {
         let menu = NSMenu()
-        for entry in items {
-            if entry.title == "-" { menu.addItem(.separator()); continue }
-            let action = Action(entry.run)
-            let item = NSMenuItem(title: entry.title, action: #selector(Action.runAction), keyEquivalent: "")
-            item.target = action
-            item.representedObject = action
-            item.state = entry.checked ? .on : .off
-            menu.addItem(item)
+        for entry in entries {
+            switch entry {
+            case .separator:
+                menu.addItem(.separator())
+            case .header(let title):
+                let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+                item.isEnabled = false
+                menu.addItem(item)
+            case .action(let title, let checked, let run):
+                let action = Action(run)
+                let item = NSMenuItem(title: title, action: #selector(Action.runAction), keyEquivalent: "")
+                item.target = action
+                item.representedObject = action
+                item.state = checked ? .on : .off
+                menu.addItem(item)
+            }
         }
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }

@@ -77,7 +77,9 @@ func status(json: Bool) {
         lines.append(pad(r.endpoint.product) + "firmware \(version ?? "?")   \(state)")
     }
 
-    let name = s.mouse?.endpoint.product ?? "mouse (via receiver)"
+    let name = s.mouse?.endpoint.product
+        ?? s.mouseProductID().flatMap { Catalog.models[$0]?.name }
+        ?? "mouse (via receiver)"
     do {
         let firmware = try s.firmwareVersion()
         let battery = try s.battery()

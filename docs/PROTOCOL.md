@@ -41,11 +41,13 @@ Through a receiver, mouse commands are sent with target `1` and the receiver for
 | `0x17` | read settings memory | 10 / 13 | address u16, length | data from byte 10 |
 | `0x1A` | connection type | 2 / 1 | | see below |
 | `0x1C` | mouse firmware | 5 / 3 | | major, minor, patch |
+| `0x4A` | mouse ID | 8 / 6 | 0 (read) | 1: company ID, 2–5: model ID u32 |
 | `0x81` | receiver link | 3 / 1 | | `1` mouse connected |
 | `0x82` | start pairing | 3 / 0 | | |
 | `0x83` | forget pairing | 3 / 0 | | |
 | `0x84` | pair status | 3 / 1 | | `1` paired |
 | `0x88` | receiver firmware | 5 / 3 | | major, minor, patch |
+| `0x89` | mouse ID, from the receiver | 8 / 6 | 0 (read) | as `0x4A`; sent like a mouse command (target `1`) |
 
 All integers are little-endian.
 
@@ -58,6 +60,8 @@ All integers are little-endian.
 **Lift-off level:** `1` to `11`, which ATK Hub shows as 0.7 to 1.7 mm in 0.1 mm steps (level 6 is 1.2 mm). Models with a two-way switch use `1` for 1 mm and `2` for 2 mm.
 
 **DPI table:** 70 bytes of settings memory from address `1`, read in seven 10-byte blocks. Byte `0` is the active stage (from 0), `1` the number of slots (8), then eight 8-byte slots: x u16, y u16, blue, green, red, alpha. The stages in use are the leading slots with a non-zero value. When ATK Hub changes one stage it sends `0x02` with `active` set only for the current stage.
+
+**Mouse ID:** company and model ID name the model (the A9 Plus NK is `2, 13`); `Catalog.mouseIDs` holds ATK Hub's table. Through a receiver it is the only way to know which mouse is on the other end. Not yet checked against hardware.
 
 **Pairing:** ATK Hub sends forget (`0x83`) then start (`0x82`) to the receiver, then polls `0x81` until the mouse connects. The mouse enters pairing mode when left, right and wheel are held together.
 

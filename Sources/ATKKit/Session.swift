@@ -169,6 +169,30 @@ public final class Session {
                               paired: try send(.getPairStatus).u8(0) != 0)
     }
 
+    /// Company and model ID of the mouse, which `Catalog.mouse(cid:mid:)` turns into a model.
+    /// ATK Hub asks the receiver with 0x89 and the mouse itself with 0x4A; this tries both.
+    public func mouseID() throws -> (cid: Int, mid: Int) {
+        var lastError: Error = ATKError.noReply(.getMouseIDViaReceiver)
+        for command in receiver != nil && mouse == nil ? [Command.getMouseIDViaReceiver, .getMouseID] : [.getMouseID] {
+            do {
+                let r = try send(command, payload: [0])
+                return (Int(r.u8(1)), Int(r.u32(2)))
+            } catch ATKError.secureInput {
+                throw ATKError.secureInput
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError
+    }
+
+    /// The connected mouse's product ID: its own over a cable, worked out from its ID otherwise.
+    public func mouseProductID() -> Int? {
+        if let mouse { return mouse.endpoint.productID }
+        guard let id = try? mouseID() else { return nil }
+        return Catalog.mouse(cid: id.cid, mid: id.mid)
+    }
+
     public func connectionType() throws -> ConnectionType? {
         ConnectionType(rawValue: try send(.getDeviceType).u8(0))
     }

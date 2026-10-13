@@ -15,6 +15,7 @@ public enum Command: UInt8, Sendable, CaseIterable {
     case getAddressData = 0x17
     case getDeviceType = 0x1A
     case getFirmwareVersion = 0x1C
+    case getMouseID = 0x4A
     case getChargeRemainingTime = 0xAE
     // receiver
     case getReceiverConnectStatus = 0x81
@@ -22,6 +23,8 @@ public enum Command: UInt8, Sendable, CaseIterable {
     case clearPairing = 0x83
     case getPairStatus = 0x84
     case getReceiverVersion = 0x88
+    /// The mouse's ID as the receiver knows it; sent like a mouse command.
+    case getMouseIDViaReceiver = 0x89
 
     /// ATK Hub's (`paramLen`, `cmdLen`). They do not follow one rule, so they are listed as sent.
     var lengths: (param: UInt8, payload: UInt8) {
@@ -36,6 +39,7 @@ public enum Command: UInt8, Sendable, CaseIterable {
         case .getFirmwareVersion, .getReceiverVersion: return (5, 3)
         case .getChargeRemainingTime: return (6, 4)
         case .getAddressData: return (10, 13)
+        case .getMouseID, .getMouseIDViaReceiver: return (8, 6)
         case .setDPI: return (12, 10)
         case .getCurrentConfig: return (19, 17)
         }

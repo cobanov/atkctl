@@ -118,6 +118,7 @@ final class MouseModel: ObservableObject {
             if !snap.hasMouse, snap.receiverName != nil, snapshot.hasMouse {
                 // The mouse is asleep: keep what it said last.
                 snap.mouseName = snapshot.mouseName
+                snap.modelPID = snapshot.modelPID
                 snap.mouseFirmware = snapshot.mouseFirmware
                 snap.battery = snapshot.battery
                 snap.link = snapshot.link

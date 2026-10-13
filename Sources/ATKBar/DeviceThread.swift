@@ -36,6 +36,8 @@ struct Snapshot {
     /// The mouse did not answer; the mouse values are the last ones read.
     var asleep = false
     var mouseName = "ATK mouse"
+    /// The mouse's model, also when it is reached through the receiver.
+    var modelPID: Int?
     var mouseFirmware: String?
     var battery: Battery?
     var link: ConnectionType?
@@ -48,10 +50,13 @@ struct Snapshot {
 /// Owns the session. Only ever touched on the device thread.
 final class Backend {
     private var session: Session?
+    /// Asked once per session: the model does not change while the receiver stays plugged in.
+    private var identified: Int??
 
     func read(rescan: Bool) throws -> Snapshot {
         if rescan || session == nil {
             session = nil  // close the old channels before the old manager goes
+            identified = nil
             let endpoints = Endpoint.discover(rescan: true)
             session = endpoints.isEmpty ? nil : Session(endpoints: endpoints)
         }
@@ -64,8 +69,14 @@ final class Backend {
                 snap.receiverConnected = try s.receiverStatus().connected
                 if !snap.receiverConnected && s.mouse == nil { return snap }
             }
-            if let mouse = s.mouse { snap.mouseName = mouse.endpoint.product }
             snap.mouseFirmware = try s.firmwareVersion()
+            if identified == nil { identified = .some(s.mouseProductID()) }
+            snap.modelPID = identified ?? nil
+            if let mouse = s.mouse {
+                snap.mouseName = mouse.endpoint.product
+            } else if let pid = snap.modelPID, let model = Catalog.models[pid] {
+                snap.mouseName = model.name
+            }
             snap.battery = try s.battery()
             snap.link = try? s.connectionType()
             snap.config = try s.config()

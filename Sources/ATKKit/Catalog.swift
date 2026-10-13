@@ -84,4 +84,64 @@ public enum Catalog {
     ]
 
     public static let tested: Set<Int> = [0x1263, 0x1216]
+
+    /// The company and model ID each mouse reports (`Session.mouseID()`), from ATK Hub's list.
+    /// Through a receiver this is the only way to tell which mouse is on the other end.
+    public static let mouseIDs: [Int: (cid: Int, mid: Int)] = [
+        0x1154: (cid: 1, mid: 1),
+        0x11DB: (cid: 2, mid: 1),
+        0x1211: (cid: 1, mid: 2),
+        0x1213: (cid: 2, mid: 5),
+        0x1214: (cid: 2, mid: 6),
+        0x1215: (cid: 2, mid: 7),
+        0x1222: (cid: 2, mid: 2),
+        0x1223: (cid: 2, mid: 3),
+        0x1224: (cid: 2, mid: 4),
+        0x123A: (cid: 1, mid: 3),
+        0x124C: (cid: 2, mid: 8),
+        0x124D: (cid: 2, mid: 9),
+        0x1251: (cid: 1, mid: 4),
+        0x1263: (cid: 2, mid: 13),
+        0x1264: (cid: 2, mid: 14),
+        0x1268: (cid: 1, mid: 16),
+        0x127B: (cid: 2, mid: 15),
+        0x1287: (cid: 1, mid: 9),
+        0x1288: (cid: 1, mid: 6),
+        0x128F: (cid: 1, mid: 7),
+        0x1299: (cid: 2, mid: 16),
+        0x129A: (cid: 2, mid: 17),
+        0x129E: (cid: 8, mid: 1),
+        0x12B1: (cid: 2, mid: 19),
+        0x12CE: (cid: 1, mid: 10),
+        0x12D0: (cid: 2, mid: 20),
+        0x12D2: (cid: 2, mid: 21),
+        0x12D9: (cid: 1, mid: 12),
+        0x12DC: (cid: 2, mid: 22),
+        0x12DE: (cid: 1, mid: 13),
+        0x12E1: (cid: 2, mid: 23),
+        0x12E3: (cid: 2, mid: 25),
+        0x12EC: (cid: 1, mid: 14),
+        0x12F1: (cid: 1, mid: 15),
+        0x1300: (cid: 2, mid: 26),
+        0x1301: (cid: 2, mid: 27),
+        0x1304: (cid: 1, mid: 17),
+        0x1305: (cid: 2, mid: 29),
+        0x1306: (cid: 2, mid: 30),
+        0x1307: (cid: 1, mid: 19),
+        0x1308: (cid: 1, mid: 18),
+        0x130E: (cid: 2, mid: 33),
+        0x130F: (cid: 2, mid: 32),
+        0x1310: (cid: 2, mid: 31),
+        0x1311: (cid: 2, mid: 28),
+        0x1312: (cid: 1, mid: 21),
+        0x1314: (cid: 1, mid: 22),
+        0x1319: (cid: 2, mid: 22),
+        0x1337: (cid: 2, mid: 34),
+        0x1338: (cid: 2, mid: 35),
+    ]
+
+    /// The product ID of the mouse that reported this ID; the lowest one if two models share it.
+    public static func mouse(cid: Int, mid: Int) -> Int? {
+        mouseIDs.filter { $0.value.cid == cid && $0.value.mid == mid }.keys.min()
+    }
 }

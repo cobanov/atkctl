@@ -5,6 +5,8 @@ import SwiftUI
 /// that colour is the only one on the panel. Everything else is type on black.
 struct MinimalPanelView: View {
     @ObservedObject var model: MouseModel
+    @ObservedObject private var images = ProductImages.shared
+    @State private var skinRevision = 0
     let showClassic: () -> Void
 
     private var snap: Snapshot { model.snapshot }
@@ -13,11 +15,11 @@ struct MinimalPanelView: View {
         VStack(spacing: 0) {
             header
             if let config = snap.config, let table = snap.dpi {
-                MouseRender(led: table.active.map(Self.led), dim: snap.asleep)
+                hero(table)
                     .padding(.top, 24)
                 readout(table)
                     .padding(.top, 16)
-                StageRow(table: table, select: model.selectStage)
+                StageRow(table: table, colours: look?.look.ledColours != false, select: model.selectStage)
                     .padding(.top, 8)
                 Rectangle().fill(Tone.hairline).frame(height: 1)
                     .padding(.top, 16)
@@ -119,13 +121,13 @@ struct MinimalPanelView: View {
                 .foregroundStyle(Tone.tertiaryText)
             Spacer()
             Button {
-                ChoiceMenu.show([
-                    (title: "Read the mouse again", checked: false, run: { model.refresh(rescan: true) }),
-                    (title: "Open at login", checked: model.openAtLogin, run: { model.setOpenAtLogin(!model.openAtLogin) }),
-                    (title: "Demo mode", checked: model.isDemo, run: { model.isDemo ? model.stopDemo() : model.startDemo() }),
-                    (title: "Classic design", checked: false, run: showClassic),
-                    (title: "-", checked: false, run: {}),
-                    (title: "Quit ATKBar", checked: false, run: { NSApplication.shared.terminate(nil) }),
+                ChoiceMenu.show(colourEntries + [
+                    .action("Read the mouse again") { model.refresh(rescan: true) },
+                    .action("Open at login", checked: model.openAtLogin) { model.setOpenAtLogin(!model.openAtLogin) },
+                    .action("Demo mode", checked: model.isDemo) { model.isDemo ? model.stopDemo() : model.startDemo() },
+                    .action("Classic design", showClassic),
+                    .separator,
+                    .action("Quit ATKBar") { NSApplication.shared.terminate(nil) },
                 ])
             } label: {
                 Image(systemName: "gearshape")
@@ -137,6 +139,38 @@ struct MinimalPanelView: View {
             .buttonStyle(.plain)
             .help("Settings")
         }
+    }
+
+    // MARK: the mouse
+
+    private var look: (pid: Int, look: ModelLook)? {
+        guard let pid = snap.modelPID, let look = ModelLooks.byPID[pid] else { return nil }
+        return (pid, look)
+    }
+
+    /// ATK's photo of the model in the user's colour once it has loaded, the drawing until then.
+    @ViewBuilder private func hero(_ table: DPITable) -> some View {
+        let _ = skinRevision
+        let tint = look?.look.ledColours == false ? nil : table.active.map(Self.led)
+        if let (pid, look) = look, let skin = SkinChoice.current(for: pid, look: look), let photo = images.image(skin.path) {
+            ProductPhoto(image: photo, glow: tint, dim: snap.asleep)
+        } else {
+            MouseRender(led: tint ?? Tone.primary, dim: snap.asleep)
+        }
+    }
+
+    /// The model's colours, for the settings menu; the mouse cannot say which one it is.
+    private var colourEntries: [ChoiceMenu.Entry] {
+        guard let (pid, look) = look, look.skins.count > 1 else { return [] }
+        let current = SkinChoice.current(for: pid, look: look)?.name
+        return [.header("Mouse colour")]
+            + look.skins.map { skin in
+                .action(skin.name, checked: skin.name == current) {
+                    SkinChoice.set(skin.name, for: pid)
+                    skinRevision += 1
+                }
+            }
+            + [.separator]
     }
 
     // MARK: text
@@ -194,6 +228,37 @@ enum Tone {
 }
 
 // MARK: - pieces
+
+/// ATK's top-down product photo, lit from behind so a black shell still reads on black.
+struct ProductPhoto: View {
+    let image: NSImage
+    let glow: Color?
+    var dim = false
+
+    var body: some View {
+        ZStack {
+            Ellipse()
+                .fill(RadialGradient(colors: [Color.white.opacity(0.13), .clear], center: .center,
+                                     startRadius: 0, endRadius: 92))
+                .frame(width: 210, height: 180)
+            Ellipse()
+                .fill(RadialGradient(colors: [(glow ?? .white).opacity(glow == nil ? 0.08 : 0.22), .clear],
+                                     center: .center, startRadius: 0, endRadius: 70))
+                .frame(width: 150, height: 22)
+                .offset(y: 84)
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(height: 164)
+                .shadow(color: .black.opacity(0.8), radius: 10, y: 6)
+        }
+        .frame(height: 176)
+        .opacity(dim ? 0.45 : 1)
+        .animation(.easeInOut(duration: 0.25), value: glow)
+        .accessibilityHidden(true)
+    }
+}
 
 /// The mouse from above, drawn rather than photographed, with its DPI LED lit.
 struct MouseRender: View {
@@ -274,6 +339,8 @@ struct MouseSeams: Shape {
 /// DPI stages as a row of numbers; the active one is bright and carries its LED colour below.
 struct StageRow: View {
     let table: DPITable
+    /// Whether the mouse's light shows the stage colours; a white dot otherwise.
+    let colours: Bool
     let select: (Int) -> Void
 
     var body: some View {
@@ -286,7 +353,7 @@ struct StageRow: View {
                             .font(Tone.type(13, active ? .medium : .regular))
                             .foregroundStyle(active ? Tone.primary : Tone.secondary)
                         Circle()
-                            .fill(active ? MinimalPanelView.led(table.stages[i]) : .clear)
+                            .fill(active ? (colours ? MinimalPanelView.led(table.stages[i]) : Tone.primary) : .clear)
                             .frame(width: 4, height: 4)
                     }
                     .frame(maxWidth: .infinity, minHeight: 32)

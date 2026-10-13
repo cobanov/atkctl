@@ -59,6 +59,10 @@ public struct Reply: Sendable, Equatable {
         UInt16(u8(offset)) | UInt16(u8(offset + 1)) << 8
     }
 
+    public func u32(_ offset: Int) -> UInt32 {
+        UInt32(u16(offset)) | UInt32(u16(offset + 2)) << 16
+    }
+
     public func payload(_ range: Range<Int>) -> [UInt8] {
         range.map { u8($0) }
     }

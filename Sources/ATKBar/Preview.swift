@@ -15,6 +15,10 @@ enum Preview {
     static let snapshot = DemoMouse().snapshot
 
     static func render(to path: String) {
+        // Fetch the product photo first; the panel only shows what is already cached.
+        if let pid = snapshot.modelPID, let look = ModelLooks.byPID[pid], let skin = SkinChoice.current(for: pid, look: look) {
+            _ = ProductImages.load(skin.path)
+        }
         let position = ArrowPosition()
         let content = MinimalPanelView(model: MouseModel(preview: snapshot), showClassic: {})
         let view = NSHostingView(rootView: ArrowPanelContainer(position: position, style: ArrowPanelStyle(),

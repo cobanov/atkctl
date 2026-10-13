@@ -106,4 +106,12 @@ enum Recorded {
 @Test func catalogKnowsTheTestedPair() {
     #expect(Catalog.models[0x1263]?.kind == .mouse)
     #expect(Catalog.models[0x1216]?.kind == .receiver)
+    #expect(Catalog.mouse(cid: 2, mid: 13) == 0x1263)
+}
+
+@Test func mouseIDRequestAndReply() throws {
+    let p = Packet.request(.getMouseIDViaReceiver, target: .mouseBehindReceiver, payload: [0])
+    #expect(Array(p[1...7]) == [0x72, 8, 0, 1, 0x89, 6, 0])
+    let reply = try #require(Reply(report: [0x08, 0x72, 0x00, 0x00, 0x00, 0x89, 0x06, 0x00, 0x02, 0x0D, 0x00, 0x00, 0x00]))
+    #expect(reply.u8(1) == 2 && reply.u32(2) == 13)
 }

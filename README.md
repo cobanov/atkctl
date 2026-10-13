@@ -38,7 +38,7 @@ Needs macOS 13 or later and the Swift toolchain that comes with Xcode or the Com
 
 With no mouse plugged in, **Try Demo** (or Demo Mode in the settings menu) shows an in-memory mouse whose settings change in the panel only.
 
-The panel comes in two designs: the dark one (left), drawn around the mouse itself and lit in its active stage's LED colour, and the classic macOS one (right). Switch from the gear menu in the dark panel, or with the sparkles button in the classic one. The dark panel hangs from the menu bar by its own arrow; [`StatusPanel.swift`](Sources/ATKBar/StatusPanel.swift) holds that part and depends on nothing else in the app.
+The panel comes in two designs: the dark one (left), built around the mouse itself, and the classic macOS one (right). The dark one shows ATK's product photo of the connected model, in the colour picked in its gear menu. ATKBar downloads the photo from ATK's CDN, as ATK Hub does, and keeps it in `~/Library/Caches`; offline, it draws the mouse instead. Through a receiver the model is found by asking for the mouse's ID (`0x89`, then `0x4A`). Switch from the gear menu in the dark panel, or with the sparkles button in the classic one. The dark panel hangs from the menu bar by its own arrow; [`StatusPanel.swift`](Sources/ATKBar/StatusPanel.swift) holds that part and depends on nothing else in the app.
 
 On first launch macOS asks to allow ATKBar under Input Monitoring; it needs that to talk to the receiver. The app is signed ad hoc, so a rebuild asks again. Set `SIGN_IDENTITY` to a signing identity when building to keep the permission.
 

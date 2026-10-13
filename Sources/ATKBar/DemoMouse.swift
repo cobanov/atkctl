@@ -20,7 +20,8 @@ struct DemoMouse {
         snap.receiverName = "NK mouse NANO dongle"
         snap.receiverFirmware = "1.0.19"
         snap.receiverConnected = true
-        snap.mouseName = "ATK A9 Plus"
+        snap.mouseName = "ATK A9 Plus NK"
+        snap.modelPID = 0x1263
         snap.mouseFirmware = "1.0.14"
         snap.battery = Battery(percent: battery, charging: false)
         snap.link = .receiver1K
