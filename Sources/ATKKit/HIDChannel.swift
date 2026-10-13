@@ -83,6 +83,10 @@ public final class HIDChannel {
     private let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 64)
     private var replies: [Reply] = []
     private var runLoop: CFRunLoop?
+    /// Reports the device sends on its own, such as `DeviceEvent.dpiChanged` when its DPI button
+    /// is pressed. Called on the channel's thread whenever that thread's run loop runs in its
+    /// default mode, and while waiting for a reply.
+    public var onEvent: ((DeviceEvent) -> Void)?
 
     /// Replies are only listened for in this mode, so waiting for one never runs anything else
     /// that is queued on the thread's run loop.
@@ -112,21 +116,29 @@ public final class HIDChannel {
             guard let context else { return }
             let channel = Unmanaged<HIDChannel>.fromOpaque(context).takeUnretainedValue()
             var bytes = Array(UnsafeBufferPointer(start: report, count: length))
-            // macOS hands numbered reports over with the ID in front; keep that shape either way.
-            if bytes.first != UInt8(truncatingIfNeeded: reportID) || bytes.dropFirst().first != Packet.commandClass {
-                bytes.insert(UInt8(truncatingIfNeeded: reportID), at: 0)
+            // macOS hands numbered reports over with the ID in front (64 bytes); add it if it is
+            // missing. Not by looking for the command class: the mouse's own reports put a
+            // checksum where replies have 0x72.
+            if bytes.count <= Packet.size { bytes.insert(UInt8(truncatingIfNeeded: reportID), at: 0) }
+            if let event = DeviceEvent(report: bytes) {
+                channel.onEvent?(event)
+            } else if let reply = Reply(report: bytes) {
+                channel.replies.append(reply)
             }
-            if let reply = Reply(report: bytes) { channel.replies.append(reply) }
         }, Unmanaged.passUnretained(self).toOpaque())
-        runLoop = CFRunLoopGetCurrent()
-        IOHIDDeviceScheduleWithRunLoop(device, runLoop!, Self.replyMode.rawValue)
+        let runLoop = CFRunLoopGetCurrent()!
+        self.runLoop = runLoop
+        // In the common modes, so reports also arrive between requests on a thread that keeps its
+        // run loop going (ATKBar's), not only while a reply is awaited.
+        CFRunLoopAddCommonMode(runLoop, Self.replyMode)
+        IOHIDDeviceScheduleWithRunLoop(device, runLoop, CFRunLoopMode.commonModes.rawValue)
     }
 
     public func close() {
         guard let runLoop else { return }
         // Callbacks pile up per device and outlive the close, so take ours off before this object goes away.
         IOHIDDeviceRegisterInputReportCallback(endpoint.device, buffer, 64, nil, Unmanaged.passUnretained(self).toOpaque())
-        IOHIDDeviceUnscheduleFromRunLoop(endpoint.device, runLoop, Self.replyMode.rawValue)
+        IOHIDDeviceUnscheduleFromRunLoop(endpoint.device, runLoop, CFRunLoopMode.commonModes.rawValue)
         IOHIDDeviceClose(endpoint.device, IOOptionBits(kIOHIDOptionsTypeNone))
         self.runLoop = nil
     }

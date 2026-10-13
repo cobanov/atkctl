@@ -52,6 +52,9 @@ final class Backend {
     private var session: Session?
     /// Asked once per session: the model does not change while the receiver stays plugged in.
     private var identified: Int??
+    /// Called on the device thread when the mouse reports a change of its own, such as a press
+    /// of its DPI button.
+    var onEvent: ((DeviceEvent) -> Void)?
 
     func read(rescan: Bool) throws -> Snapshot {
         if rescan || session == nil {
@@ -59,6 +62,7 @@ final class Backend {
             identified = nil
             let endpoints = Endpoint.discover(rescan: true)
             session = endpoints.isEmpty ? nil : Session(endpoints: endpoints)
+            session?.onEvent = { [weak self] in self?.onEvent?($0) }
         }
         guard let s = session else { throw ATKError.notConnected("No ATK or VXE mouse found. Plug in the receiver, or connect the mouse with its cable.") }
         do {

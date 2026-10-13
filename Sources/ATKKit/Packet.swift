@@ -67,3 +67,32 @@ public struct Reply: Sendable, Equatable {
         range.map { u8($0) }
     }
 }
+
+/// A report the device sends without being asked, recorded from an A9 Plus NK behind the NK NANO
+/// dongle when its DPI button was pressed:
+///
+///     08 91 73 01 05 00 80 0c 80 0c 00…
+///     id cs ev ty ln    x u16  y u16
+///
+/// Byte 2 is 0x73 where replies carry 0x72, byte 3 the kind (1 DPI, 2 profile, as in ATK Hub).
+public enum DeviceEvent: Sendable, Equatable {
+    /// The DPI button was pressed; the DPI the mouse switched to, when the report carries it.
+    case dpiChanged(dpi: Int?)
+    /// The profile changed: re-read the configuration.
+    case profileChanged
+    case other(UInt8)
+
+    public static let eventClass: UInt8 = 0x73
+
+    /// `report` with the report ID in front, as `Reply` takes it.
+    public init?(report: [UInt8]) {
+        guard report.count > 3, report[0] == Packet.reportID, report[2] == Self.eventClass else { return nil }
+        switch report[3] {
+        case 1:
+            let dpi = report.count > 7 ? Int(report[6]) | Int(report[7]) << 8 : 0
+            self = .dpiChanged(dpi: dpi > 0 ? dpi : nil)
+        case 2: self = .profileChanged
+        default: self = .other(report[3])
+        }
+    }
+}

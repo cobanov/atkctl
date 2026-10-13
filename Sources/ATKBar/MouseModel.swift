@@ -31,6 +31,10 @@ final class MouseModel: ObservableObject {
     private var hotPlug: HotPlug?
     private var timer: Timer?
     private var pendingRescan: DispatchWorkItem?
+    private var pendingEventRefresh: DispatchWorkItem?
+    /// The DPI the mouse's button last switched to. Kept in case the stored DPI table, which is
+    /// what a read returns, does not follow the button; a stage picked here replaces it.
+    private var buttonDPI: Int?
     private var warnedLow = false
     private let bundled = Bundle.main.bundleIdentifier != nil
 
@@ -47,6 +51,8 @@ final class MouseModel: ObservableObject {
         }
         checkInputMonitoring()
         hotPlug = HotPlug { [weak self] in Task { @MainActor in self?.scheduleRescan() } }
+        // A press of the mouse's DPI button: it says so, and the new stage is read back.
+        backend.onEvent = { [weak self] event in Task { @MainActor in self?.deviceEvent(event) } }
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
@@ -91,6 +97,24 @@ final class MouseModel: ObservableObject {
         refresh(rescan: true)
     }
 
+    private func deviceEvent(_ event: DeviceEvent) {
+        guard demo == nil else { return }
+        // The report names the new DPI, so the panel can follow the button at once.
+        if case .dpiChanged(let dpi?) = event {
+            buttonDPI = dpi
+            if let table = snapshot.dpi?.activating(dpi: dpi) { snapshot.dpi = table }
+        }
+        scheduleEventRefresh()
+    }
+
+    /// Coalesces a burst of button presses into one read.
+    private func scheduleEventRefresh() {
+        pendingEventRefresh?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.refresh() }
+        pendingEventRefresh = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
+    }
+
     private func scheduleRescan() {
         pendingRescan?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.refresh(rescan: true) }
@@ -125,6 +149,10 @@ final class MouseModel: ObservableObject {
                 snap.config = snapshot.config
                 snap.dpi = snapshot.dpi
                 snap.asleep = true
+            }
+            if let dpi = buttonDPI, let table = snap.dpi, table.active?.x != dpi,
+               let pressed = table.activating(dpi: dpi) {
+                snap.dpi = pressed
             }
             snapshot = snap
             if snap.receiverName != nil && !snap.receiverConnected {
@@ -162,7 +190,10 @@ final class MouseModel: ObservableObject {
         snapshot = mouse.snapshot
     }
 
-    func selectStage(_ index: Int) { change({ $0.activeStage = index }) { try $0.selectDPIStage(index) } }
+    func selectStage(_ index: Int) {
+        buttonDPI = nil
+        change({ $0.activeStage = index }) { try $0.selectDPIStage(index) }
+    }
     func setReportRate(_ rate: ReportRate) { change({ $0.rate = rate }) { try $0.setReportRate(rate) } }
     func setLiftOff(_ millimetres: Double) {
         change({ $0.liftOffLevel = Int((millimetres * 10).rounded()) - 6 }) { try $0.setLiftOff(millimetres: millimetres) }

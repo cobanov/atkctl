@@ -115,3 +115,20 @@ enum Recorded {
     let reply = try #require(Reply(report: [0x08, 0x72, 0x00, 0x00, 0x00, 0x89, 0x06, 0x00, 0x02, 0x0D, 0x00, 0x00, 0x00]))
     #expect(reply.u8(1) == 2 && reply.u32(2) == 13)
 }
+
+@Test func deviceEventsAreToldApartFromReplies() {
+    // Recorded: the DPI button switching an A9 Plus NK to 3200, then to 400.
+    var press = [UInt8](repeating: 0, count: 64)
+    press.replaceSubrange(0..<10, with: [0x08, 0x91, 0x73, 0x01, 0x05, 0x00, 0x80, 0x0c, 0x80, 0x0c])
+    #expect(DeviceEvent(report: press) == .dpiChanged(dpi: 3200))
+    press.replaceSubrange(0..<10, with: [0x08, 0x9b, 0x73, 0x01, 0x05, 0x00, 0x90, 0x01, 0x90, 0x01])
+    #expect(DeviceEvent(report: press) == .dpiChanged(dpi: 400))
+
+    var profile = [UInt8](repeating: 0, count: 64)
+    profile.replaceSubrange(0..<4, with: [0x08, 0x10, 0x73, 0x02])
+    #expect(DeviceEvent(report: profile) == .profileChanged)
+
+    // A reply to the DPI table read (0x17) is not an event.
+    let reply: [UInt8] = [8, 0x72, 0x00, 0x11, 0x00, 0x17, 0x0d, 0x01, 0x00, 0x0a, 0x02, 0x08]
+    #expect(DeviceEvent(report: reply) == nil)
+}

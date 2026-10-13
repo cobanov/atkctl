@@ -89,6 +89,16 @@ public struct DPITable: Equatable, Sendable {
 
     public var active: DPIStage? { stages.indices.contains(activeIndex) ? stages[activeIndex] : nil }
 
+    public init(activeIndex: Int, stages: [DPIStage]) {
+        self.activeIndex = activeIndex
+        self.stages = stages
+    }
+
+    /// The same table with the stage set to `dpi` active, if a stage has that value.
+    public func activating(dpi: Int) -> DPITable? {
+        stages.firstIndex { $0.x == dpi }.map { DPITable(activeIndex: $0, stages: stages) }
+    }
+
     public init(_ bytes: [UInt8]) {
         activeIndex = Int(bytes[0])
         let slots = min(Int(bytes[1]), 8)
@@ -138,6 +148,12 @@ public final class Session {
     }
 
     public var isEmpty: Bool { mouse == nil && receiver == nil }
+
+    /// Reports the mouse or receiver sends on its own. They arrive only once a channel is open
+    /// (after its first request), on the thread that uses the session.
+    public var onEvent: ((DeviceEvent) -> Void)? {
+        didSet { [mouse, receiver].forEach { $0?.onEvent = onEvent } }
+    }
 
     /// Sends a command to whichever device answers it, routing mouse commands through the receiver if needed.
     public func send(_ command: Command, payload: [UInt8] = []) throws -> Reply {
