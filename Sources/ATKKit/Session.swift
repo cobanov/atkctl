@@ -176,7 +176,10 @@ public final class Session {
         for command in receiver != nil && mouse == nil ? [Command.getMouseIDViaReceiver, .getMouseID] : [.getMouseID] {
             do {
                 let r = try send(command, payload: [0])
-                return (Int(r.u8(1)), Int(r.u32(2)))
+                let id = (cid: Int(r.u8(1)), mid: Int(r.u32(2)))
+                // The NK NANO dongle answers 0x89 with zeros; the mouse itself answers 0x4A.
+                guard id.cid != 0 else { lastError = ATKError.noReply(command); continue }
+                return id
             } catch ATKError.secureInput {
                 throw ATKError.secureInput
             } catch {
