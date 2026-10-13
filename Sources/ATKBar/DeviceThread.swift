@@ -55,7 +55,7 @@ final class Backend {
             let endpoints = Endpoint.discover(rescan: true)
             session = endpoints.isEmpty ? nil : Session(endpoints: endpoints)
         }
-        guard let s = session else { throw ATKError.notConnected("No ATK or VXE mouse or receiver found.") }
+        guard let s = session else { throw ATKError.notConnected("No ATK or VXE mouse found. Plug in the receiver, or connect the mouse with its cable.") }
         do {
             var snap = Snapshot()
             if let receiver = s.receiver {
@@ -81,7 +81,7 @@ final class Backend {
 
     func apply(_ change: (Session) throws -> Void) throws -> Snapshot {
         if session == nil { _ = try read(rescan: true) }
-        guard let session else { throw ATKError.notConnected("No ATK or VXE mouse or receiver found.") }
+        guard let session else { throw ATKError.notConnected("No ATK or VXE mouse found. Plug in the receiver, or connect the mouse with its cable.") }
         try change(session)
         return try read(rescan: false)
     }

@@ -9,12 +9,12 @@ import SwiftUI
 
 /// Looks of the panel.
 struct ArrowPanelStyle {
-    var fill = Color(white: 0.035)
-    var border = Color.white.opacity(0.09)
-    var cornerRadius: CGFloat = 26
+    var fill = Color.black
+    var border = Color.white.opacity(0.08)
+    var cornerRadius: CGFloat = 20
     /// Half the width of the arrow's base, including the flare into the panel's edge.
-    var arrowHalfWidth: CGFloat = 22
-    var arrowHeight: CGFloat = 11
+    var arrowHalfWidth: CGFloat = 17
+    var arrowHeight: CGFloat = 9
     /// Space between the menu bar and the arrow's tip.
     var gap: CGFloat = 3
 }

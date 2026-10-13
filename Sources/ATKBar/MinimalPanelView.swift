@@ -1,7 +1,8 @@
 import ATKKit
 import SwiftUI
 
-/// The dark panel: the active DPI large, stages on a slider, the other settings as tiles.
+/// The dark panel. The mouse itself is the centrepiece, lit in its active stage's LED colour;
+/// that colour is the only one on the panel. Everything else is type on black.
 struct MinimalPanelView: View {
     @ObservedObject var model: MouseModel
     let showClassic: () -> Void
@@ -9,158 +10,151 @@ struct MinimalPanelView: View {
     private var snap: Snapshot { model.snapshot }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(spacing: 0) {
             header
-            if let problem = model.problem { problemRow(problem) }
-            if let config = snap.config {
-                hero(config)
-                if let table = snap.dpi, table.stages.count > 1 { StageSlider(table: table, select: model.selectStage) }
-                tiles(config)
-                toggles(config)
+            if let config = snap.config, let table = snap.dpi {
+                MouseRender(led: table.active.map(Self.led), dim: snap.asleep)
+                    .padding(.top, 24)
+                readout(table)
+                    .padding(.top, 16)
+                StageRow(table: table, select: model.selectStage)
+                    .padding(.top, 8)
+                Rectangle().fill(Tone.hairline).frame(height: 1)
+                    .padding(.top, 16)
+                    .padding(.bottom, 6)
+                settings(config)
+                    .disabled(model.busy || snap.asleep)
+            } else {
+                emptyState
             }
             footer
+                .padding(.top, 14)
         }
         .padding(.horizontal, 22)
         .padding(.top, 20)
-        .padding(.bottom, 18)
-        .frame(width: 380)
-        .foregroundStyle(.white)
-        .disabled(model.busy || snap.asleep)
+        .padding(.bottom, 16)
+        .frame(width: 330)
+        .foregroundStyle(Tone.primary)
     }
 
     // MARK: sections
 
     private var header: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "computermouse")
-                .font(.system(size: 17, weight: .light))
-                .foregroundStyle(Theme.dim)
-            Text(snap.hasMouse ? snap.mouseName : "No mouse")
-                .font(Theme.font(17, .medium))
-                .foregroundStyle(Theme.dim)
-            if let firmware = snap.mouseFirmware {
-                Text(firmware).font(Theme.font(17, .medium))
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(snap.hasMouse ? snap.mouseName : "ATK mouse")
+                    .font(Tone.type(15, .medium))
+                Text(statusLine)
+                    .font(Tone.type(12, .regular))
+                    .foregroundStyle(model.problem != nil && snap.hasMouse && !snap.asleep ? Tone.warning : Tone.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer()
-            if let battery = snap.battery { BatteryRing(battery: battery) }
+            Spacer(minLength: 16)
+            if let battery = snap.battery { BatteryGauge(battery: battery).padding(.top, 2) }
         }
     }
 
-    private func problemRow(_ problem: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(problem, systemImage: "exclamationmark.triangle")
-                .font(Theme.font(14, .medium))
-                .foregroundStyle(.orange)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
-                if model.needsInputMonitoring {
-                    Button("Open Input Monitoring Settings") { model.openInputMonitoringSettings() }
-                        .buttonStyle(PillButtonStyle())
-                }
-                if !snap.hasMouse {
-                    Button("Try Demo") { model.startDemo() }.buttonStyle(PillButtonStyle())
-                }
-            }
+    private func readout(_ table: DPITable) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(verbatim: table.active.map { "\($0.x)" } ?? "–")
+                .font(Tone.type(46, .ultraLight))
+                .monospacedDigit()
+                .numericTransition()
+            Text("DPI")
+                .font(Tone.type(13, .regular))
+                .foregroundStyle(Tone.secondary)
         }
+        .animation(.easeOut(duration: 0.2), value: table.activeIndex)
     }
 
-    private func hero(_ config: MouseConfig) -> some View {
-        HStack(alignment: .lastTextBaseline) {
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(verbatim: snap.dpi?.active.map { "\($0.x)" } ?? "–")
-                    .font(Theme.font(68, .semibold))
-                    .monospacedDigit()
-                Text("dpi").font(Theme.font(24, .medium)).foregroundStyle(Theme.dim)
-            }
-            .fixedSize()
-            Spacer(minLength: 12)
-            if let table = snap.dpi, let active = table.active {
-                // The stage's LED colour, as the mouse shows it.
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(Color(red: Double(active.color.r) / 255, green: Double(active.color.g) / 255,
-                                    blue: Double(active.color.b) / 255))
-                        .frame(width: 9, height: 9)
-                        .shadow(color: Color(red: Double(active.color.r) / 255, green: Double(active.color.g) / 255,
-                                             blue: Double(active.color.b) / 255), radius: 5)
-                    Text("Stage \(table.activeIndex + 1) of \(table.stages.count)")
-                        .font(Theme.font(15, .medium))
-                        .foregroundStyle(Theme.dim)
-                }
-                .padding(.bottom, 10)
-            }
-        }
-    }
-
-    private func tiles(_ config: MouseConfig) -> some View {
-        HStack(spacing: 8) {
-            Tile(icon: "dot.radiowaves.left.and.right", title: "Polling",
-                 value: config.reportRate.map { "\($0.rawValue) Hz" } ?? "?") {
+    private func settings(_ config: MouseConfig) -> some View {
+        VStack(spacing: 0) {
+            ChoiceRow(title: "Polling rate", value: config.reportRate.map { "\($0.rawValue) Hz" } ?? "Unknown") {
                 ChoiceMenu.show(reportRates, current: config.reportRate, title: { "\($0.rawValue) Hz" }, pick: model.setReportRate)
             }
-            Tile(icon: "arrow.up.and.down", title: "Lift-off", value: mm(config.liftOffMillimetres)) {
-                ChoiceMenu.show((7...17).map { Double($0) / 10 }, current: config.liftOffMillimetres,
-                                title: mm, pick: model.setLiftOff)
+            ChoiceRow(title: "Lift-off distance", value: mm(config.liftOffMillimetres)) {
+                ChoiceMenu.show((7...17).map { Double($0) / 10 }, current: config.liftOffMillimetres, title: mm,
+                                pick: model.setLiftOff)
             }
-            Tile(icon: "moon", title: "Sleep", value: duration(config.sleepSeconds)) {
+            ChoiceRow(title: "Sleep after", value: duration(config.sleepSeconds)) {
                 ChoiceMenu.show(Session.sleepChoices, current: config.sleepSeconds, title: duration, pick: model.setSleep)
             }
-            Tile(icon: "timer", title: "Debounce", value: "\(config.debounceMs) ms") {
-                ChoiceMenu.show(Session.debounceChoices, current: config.debounceMs, title: { "\($0) ms" }, pick: model.setDebounce)
+            ChoiceRow(title: "Debounce time", value: "\(config.debounceMs) ms") {
+                ChoiceMenu.show(Session.debounceChoices, current: config.debounceMs, title: { "\($0) ms" },
+                                pick: model.setDebounce)
             }
+            SwitchRow(title: "Motion sync", isOn: config.motionSync, set: model.setMotionSync)
+            SwitchRow(title: "Ripple control", isOn: config.rippleControl, set: model.setRipple)
+            SwitchRow(title: "Angle snapping", isOn: config.angleSnapping, set: model.setAngleSnapping)
         }
     }
 
-    private func toggles(_ config: MouseConfig) -> some View {
-        HStack(spacing: 8) {
-            ToggleTile(icon: "wave.3.right", title: "Motion sync", isOn: config.motionSync, set: model.setMotionSync)
-            ToggleTile(icon: "water.waves", title: "Ripple control", isOn: config.rippleControl, set: model.setRipple)
-            ToggleTile(icon: "line.diagonal", title: "Angle snap", isOn: config.angleSnapping, set: model.setAngleSnapping)
+    private var emptyState: some View {
+        VStack(spacing: 0) {
+            MouseRender(led: nil, dim: true)
+                .padding(.top, 26)
+            Text(model.problem ?? "Looking for the mouse")
+                .font(Tone.type(13, .regular))
+                .foregroundStyle(Tone.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 22)
+            HStack(spacing: 10) {
+                if model.needsInputMonitoring {
+                    Button("Allow Input Monitoring") { model.openInputMonitoringSettings() }
+                }
+                Button("Try the demo") { model.startDemo() }
+            }
+            .buttonStyle(OutlineButtonStyle())
+            .padding(.top, 16)
+            .padding(.bottom, 10)
         }
+        .frame(maxWidth: .infinity)
     }
 
     private var footer: some View {
-        HStack(spacing: 8) {
-            Image(systemName: statusIcon)
-                .font(.system(size: 15))
-            Text(status)
-                .font(Theme.font(14, .medium))
-                .lineLimit(1)
+        HStack {
+            Text(footnote)
+                .font(Tone.type(11.5, .regular))
+                .foregroundStyle(Tone.tertiaryText)
             Spacer()
-            if model.busy { ProgressView().controlSize(.small).tint(.white) }
             Button {
                 ChoiceMenu.show([
-                    (title: "Refresh", checked: false, run: { model.refresh(rescan: true) }),
-                    (title: "Open at Login", checked: model.openAtLogin, run: { model.setOpenAtLogin(!model.openAtLogin) }),
-                    (title: "Demo Mode", checked: model.isDemo, run: { model.isDemo ? model.stopDemo() : model.startDemo() }),
-                    (title: "Classic Design", checked: false, run: showClassic),
+                    (title: "Read the mouse again", checked: false, run: { model.refresh(rescan: true) }),
+                    (title: "Open at login", checked: model.openAtLogin, run: { model.setOpenAtLogin(!model.openAtLogin) }),
+                    (title: "Demo mode", checked: model.isDemo, run: { model.isDemo ? model.stopDemo() : model.startDemo() }),
+                    (title: "Classic design", checked: false, run: showClassic),
                     (title: "-", checked: false, run: {}),
                     (title: "Quit ATKBar", checked: false, run: { NSApplication.shared.terminate(nil) }),
                 ])
             } label: {
-                Image(systemName: "slider.horizontal.3").font(.system(size: 17)).contentShape(Rectangle())
+                Image(systemName: "gearshape")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(Tone.secondary)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .help("Settings")
         }
-        .foregroundStyle(Theme.dim)
     }
 
-    // MARK: helpers
+    // MARK: text
 
-    private var status: String {
-        if model.isDemo { return "Demo · nothing is sent to a mouse" }
-        if snap.asleep { return "Mouse asleep" }
-        if snap.hasMouse {
-            return ["Connected", snap.link?.label].compactMap { $0 }.joined(separator: " · ")
+    private var statusLine: String {
+        if model.isDemo { return "Demo mouse, nothing is sent to a device" }
+        if snap.asleep { return "Asleep. Move the mouse to wake it." }
+        if snap.hasMouse, let problem = model.problem { return problem }
+        guard snap.hasMouse else { return snap.receiverName == nil ? "Not connected" : "Receiver connected, no mouse" }
+        switch snap.link {
+        case .wired1K, .wired2K, .wired4K, .wired8K: return "Connected by cable"
+        default: return "Connected through the receiver"
         }
-        return snap.receiverName == nil ? "No receiver" : "Receiver has no mouse"
     }
 
-    private var statusIcon: String {
-        if model.isDemo { return "play.circle" }
-        if snap.asleep { return "moon.zzz" }
-        if snap.hasMouse { return "checkmark.shield" }
-        return "antenna.radiowaves.left.and.right.slash"
+    private var footnote: String {
+        guard let mouse = snap.mouseFirmware else { return "" }
+        return "Firmware \(mouse)" + (snap.receiverFirmware.map { ", receiver \($0)" } ?? "")
     }
 
     private var reportRates: [ReportRate] {
@@ -173,221 +167,246 @@ struct MinimalPanelView: View {
     private func duration(_ seconds: Int) -> String {
         seconds % 60 == 0 ? "\(seconds / 60) min" : "\(seconds) s"
     }
+
+    static func led(_ stage: DPIStage) -> Color {
+        Color(red: Double(stage.color.r) / 255, green: Double(stage.color.g) / 255, blue: Double(stage.color.b) / 255)
+    }
+}
+
+// MARK: - tokens
+
+enum Tone {
+    static let primary = Color(white: 0.94)
+    static let secondary = Color(white: 0.55)
+    static let tertiaryText = Color(white: 0.42)
+    static let track = Color(white: 0.2)
+    static let hairline = Color(white: 0.11)
+    static let warning = Color(red: 0.96, green: 0.68, blue: 0.25)
+
+    enum Weight: String {
+        case ultraLight = "UltraLight", regular = "Regular", medium = "Medium", demiBold = "DemiBold"
+    }
+
+    /// Avenir Next, the geometric sans on every Mac closest to the Gotham of Tesla's interface.
+    static func type(_ size: CGFloat, _ weight: Weight) -> Font {
+        .custom("AvenirNext-\(weight.rawValue)", fixedSize: size)
+    }
 }
 
 // MARK: - pieces
 
-enum Theme {
-    static let dim = Color.white.opacity(0.55)
-    static let faint = Color.white.opacity(0.35)
-    static let card = Color.white.opacity(0.055)
-    static let cardBorder = Color.white.opacity(0.05)
+/// The mouse from above, drawn rather than photographed, with its DPI LED lit.
+struct MouseRender: View {
+    let led: Color?
+    var dim = false
 
-    static func font(_ size: CGFloat, _ weight: Font.Weight) -> Font {
-        .system(size: size, weight: weight).width(.condensed)
+    static let size = CGSize(width: 64, height: 102)
+
+    var body: some View {
+        let w = Self.size.width, h = Self.size.height
+        ZStack {
+            // Light pooling on the surface under the mouse.
+            Ellipse()
+                .fill(RadialGradient(colors: [Color.white.opacity(0.09), .clear], center: .center,
+                                     startRadius: 0, endRadius: 58))
+                .frame(width: 128, height: 18)
+                .offset(y: h / 2 + 2)
+            Group {
+                MouseOutline()
+                    .fill(LinearGradient(colors: [Color(white: 0.24), Color(white: 0.06)],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                MouseOutline()
+                    .stroke(LinearGradient(colors: [Color.white.opacity(0.4), Color.white.opacity(0.04)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
+                MouseSeams()
+                    .stroke(Color.black, lineWidth: 1.1)
+            }
+            .frame(width: w, height: h)
+            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                .fill(LinearGradient(colors: [Color(white: 0.38), Color(white: 0.14)], startPoint: .top, endPoint: .bottom))
+                .frame(width: 6, height: 14)
+                .offset(y: -h * 0.3)
+            if let led {
+                Circle()
+                    .fill(led)
+                    .frame(width: 3.5, height: 3.5)
+                    .shadow(color: led, radius: 4)
+                    .shadow(color: led.opacity(0.7), radius: 10)
+                    .offset(y: -h * 0.175)
+            }
+        }
+        .frame(width: w, height: h)
+        .opacity(dim ? 0.45 : 1)
+        .animation(.easeInOut(duration: 0.25), value: led)
+        .accessibilityHidden(true)
     }
 }
 
-/// DPI stages on a track: drag or click to pick one, or step with − and +.
-struct StageSlider: View {
+/// A symmetric ergonomic shell, widest two thirds of the way back.
+struct MouseOutline: Shape {
+    func path(in r: CGRect) -> Path {
+        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: r.minX + x * r.width, y: r.minY + y * r.height) }
+        var path = Path()
+        path.move(to: p(0.5, 0))
+        path.addCurve(to: p(1, 0.56), control1: p(0.82, 0), control2: p(0.99, 0.22))
+        path.addCurve(to: p(0.5, 1), control1: p(1.01, 0.86), control2: p(0.8, 1))
+        path.addCurve(to: p(0, 0.56), control1: p(0.2, 1), control2: p(-0.01, 0.86))
+        path.addCurve(to: p(0.5, 0), control1: p(0.01, 0.22), control2: p(0.18, 0))
+        return path
+    }
+}
+
+/// The split between the buttons, interrupted by the wheel, and the buttons' rear edge.
+struct MouseSeams: Shape {
+    func path(in r: CGRect) -> Path {
+        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: r.minX + x * r.width, y: r.minY + y * r.height) }
+        var path = Path()
+        path.move(to: p(0.5, 0.005))
+        path.addLine(to: p(0.5, 0.12))
+        path.move(to: p(0.5, 0.36))
+        path.addLine(to: p(0.5, 0.415))
+        path.move(to: p(0.07, 0.42))
+        path.addQuadCurve(to: p(0.93, 0.42), control: p(0.5, 0.455))
+        return path
+    }
+}
+
+/// DPI stages as a row of numbers; the active one is bright and carries its LED colour below.
+struct StageRow: View {
     let table: DPITable
     let select: (Int) -> Void
-    @State private var dragX: CGFloat?
-
-    private var last: Int { table.stages.count - 1 }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
-                RoundButton(icon: "minus") { if table.activeIndex > 0 { select(table.activeIndex - 1) } }
-                    .disabled(table.activeIndex == 0)
-                GeometryReader { geo in track(width: geo.size.width) }
-                    .frame(height: 50)
-                RoundButton(icon: "plus") { if table.activeIndex < last { select(table.activeIndex + 1) } }
-                    .disabled(table.activeIndex == last)
-            }
-            HStack {
-                Text(verbatim: "\(table.stages[0].x)")
-                Spacer()
-                Text(verbatim: "\(table.stages[last].x)")
-            }
-            .font(Theme.font(14, .medium))
-            .foregroundStyle(Theme.dim)
-            .padding(.horizontal, 62)
-        }
-    }
-
-    private func track(width: CGFloat) -> some View {
-        let knob: CGFloat = 30, inset: CGFloat = 6
-        let span = width - knob - inset * 2
-        let stageX = { (i: Int) in inset + span * CGFloat(i) / CGFloat(max(last, 1)) }
-        let x = dragX ?? stageX(table.activeIndex)
-        let nearest = { (x: CGFloat) in Int(((x - inset) / span * CGFloat(last)).rounded()).clamped(0, last) }
-
-        return ZStack(alignment: .leading) {
-            Capsule().fill(Color.black)
-                .overlay(Capsule().stroke(Theme.cardBorder))
-            Capsule()
-                .fill(LinearGradient(colors: [Color.white.opacity(0.32), Color.white.opacity(0.1)],
-                                     startPoint: .leading, endPoint: .trailing))
-                .frame(width: x + knob + inset)
+        HStack(spacing: 0) {
             ForEach(table.stages.indices, id: \.self) { i in
-                Circle().fill(Color.white.opacity(i <= nearest(x) ? 0 : 0.25))
-                    .frame(width: 4, height: 4)
-                    .offset(x: stageX(i) + knob / 2 - 2)
+                let active = i == table.activeIndex
+                Button { if !active { select(i) } } label: {
+                    VStack(spacing: 6) {
+                        Text(verbatim: "\(table.stages[i].x)")
+                            .font(Tone.type(13, active ? .medium : .regular))
+                            .foregroundStyle(active ? Tone.primary : Tone.secondary)
+                        Circle()
+                            .fill(active ? MinimalPanelView.led(table.stages[i]) : .clear)
+                            .frame(width: 4, height: 4)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 32)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Stage \(i + 1)")
             }
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(Color.white.opacity(0.88))
-                .frame(width: knob, height: 38)
-                .shadow(color: .black.opacity(0.5), radius: 6)
-                .offset(x: x)
         }
-        .contentShape(Rectangle())
-        .gesture(DragGesture(minimumDistance: 0)
-            .onChanged { dragX = ($0.location.x - knob / 2).clamped(inset, inset + span) }
-            .onEnded { value in
-                let i = nearest((value.location.x - knob / 2).clamped(inset, inset + span))
-                withAnimation(.easeOut(duration: 0.15)) { dragX = nil }
-                if i != table.activeIndex { select(i) }
-            })
-        .animation(.easeOut(duration: 0.15), value: table.activeIndex)
+        .animation(.easeOut(duration: 0.2), value: table.activeIndex)
     }
 }
 
-struct RoundButton: View {
-    let icon: String
-    let action: () -> Void
-    @Environment(\.isEnabled) private var enabled
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 18, weight: .medium))
-                .frame(width: 50, height: 50)
-                .background(Circle().fill(Theme.card))
-                .overlay(Circle().stroke(Theme.cardBorder))
-                .opacity(enabled ? 1 : 0.35)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-/// A setting shown as a card; clicking opens its choices.
-struct Tile: View {
-    let icon: String
+/// A setting whose value opens a menu of choices.
+struct ChoiceRow: View {
     let title: String
     let value: String
     let action: () -> Void
+    @State private var hover = false
 
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .top) {
-                    Image(systemName: icon).font(.system(size: 20, weight: .light)).foregroundStyle(Theme.dim)
-                    Spacer()
-                    Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.faint)
-                }
-                .frame(height: 24)
-                Spacer(minLength: 0)
-                Text(title).font(Theme.font(13, .medium)).foregroundStyle(Theme.faint)
-                Text(verbatim: value).font(Theme.font(17, .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+            HStack(spacing: 6) {
+                Text(title).font(Tone.type(13.5, .regular))
+                Spacer()
+                Text(verbatim: value).font(Tone.type(13.5, .regular)).foregroundStyle(Tone.secondary)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 8.5, weight: .semibold))
+                    .foregroundStyle(Tone.tertiaryText)
             }
-            .padding(11)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: 96)
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.card))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Theme.cardBorder))
-            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .rowFrame(hover: hover)
         }
         .buttonStyle(.plain)
+        .onHover { hover = $0 }
     }
 }
 
-/// A card with an icon, a switch and a title; the whole card toggles.
-struct ToggleTile: View {
-    let icon: String
+struct SwitchRow: View {
     let title: String
     let isOn: Bool
     let set: (Bool) -> Void
+    @State private var hover = false
 
     var body: some View {
         Button { set(!isOn) } label: {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Image(systemName: icon).font(.system(size: 17, weight: .light))
-                        .foregroundStyle(isOn ? Color.white : Theme.dim)
-                    Spacer(minLength: 4)
-                    Switch(isOn: isOn)
-                }
-                Spacer(minLength: 0)
-                Text(title).font(Theme.font(15, .medium)).lineLimit(1)
-                    .foregroundStyle(isOn ? Color.white : Theme.dim)
+            HStack {
+                Text(title).font(Tone.type(13.5, .regular))
+                Spacer()
+                Capsule()
+                    .fill(isOn ? Tone.primary : Tone.track)
+                    .frame(width: 32, height: 19)
+                    .overlay(alignment: isOn ? .trailing : .leading) {
+                        Circle()
+                            .fill(isOn ? Color.black : Color(white: 0.58))
+                            .frame(width: 15, height: 15)
+                            .padding(2)
+                    }
+                    .animation(.easeOut(duration: 0.15), value: isOn)
             }
-            .padding(11)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: 76)
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.card))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Theme.cardBorder))
-            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .rowFrame(hover: hover)
         }
         .buttonStyle(.plain)
+        .onHover { hover = $0 }
+        .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 }
 
-struct Switch: View {
-    let isOn: Bool
-
-    var body: some View {
-        Capsule()
-            .fill(isOn ? Color.white.opacity(0.9) : Color.white.opacity(0.1))
-            .frame(width: 40, height: 24)
-            .overlay(alignment: isOn ? .trailing : .leading) {
-                Capsule()
-                    .fill(isOn ? Color.black : Color.white.opacity(0.75))
-                    .frame(width: 22, height: 18)
-                    .padding(3)
-            }
-            .animation(.easeOut(duration: 0.15), value: isOn)
-    }
-}
-
-struct BatteryRing: View {
+struct BatteryGauge: View {
     let battery: Battery
 
-    private var color: Color {
-        if battery.charging { return .green }
-        return battery.percent <= MouseModel.lowBattery ? .red : .white
+    private var fill: Color {
+        if battery.charging { return Color(red: 0.35, green: 0.8, blue: 0.45) }
+        return battery.percent <= MouseModel.lowBattery ? Color(red: 0.95, green: 0.3, blue: 0.25) : Tone.primary
     }
 
     var body: some View {
-        ZStack {
-            Circle().fill(Theme.card)
-            Circle().stroke(Color.white.opacity(0.1), lineWidth: 3).padding(5)
-            Circle()
-                .trim(from: 0, to: CGFloat(battery.percent) / 100)
-                .stroke(color.opacity(0.85), style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .padding(5)
-            Text(battery.charging ? "⚡︎" : "\(battery.percent)")
-                .font(Theme.font(14, .semibold))
+        HStack(spacing: 6) {
+            Text(verbatim: "\(battery.percent)%")
+                .font(Tone.type(13, .medium))
                 .monospacedDigit()
+            HStack(spacing: 1) {
+                RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                    .stroke(Tone.secondary, lineWidth: 1)
+                    .frame(width: 22, height: 11)
+                    .overlay(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 1.2, style: .continuous)
+                            .fill(fill)
+                            .frame(width: max(1.5, 18 * CGFloat(battery.percent) / 100), height: 7)
+                            .padding(.leading, 2)
+                    }
+                RoundedRectangle(cornerRadius: 0.8).fill(Tone.secondary).frame(width: 1.5, height: 4)
+            }
         }
-        .frame(width: 48, height: 48)
-        .help("Battery \(battery.percent)%\(battery.charging ? ", charging" : "")")
+        .help(battery.charging ? "Charging" : "Battery")
     }
 }
 
-struct PillButtonStyle: ButtonStyle {
+struct OutlineButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(Theme.font(14, .medium))
+            .font(Tone.type(12.5, .medium))
+            .foregroundStyle(Tone.primary)
             .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(Capsule().fill(Color.white.opacity(configuration.isPressed ? 0.2 : 0.1)))
+            .padding(.vertical, 7)
+            .background(Capsule().fill(Color.white.opacity(configuration.isPressed ? 0.12 : 0)))
+            .overlay(Capsule().strokeBorder(Color.white.opacity(0.22), lineWidth: 1))
+            .contentShape(Capsule())
     }
 }
 
-private extension Comparable {
-    func clamped(_ low: Self, _ high: Self) -> Self { min(max(self, low), high) }
+private extension View {
+    func rowFrame(hover: Bool) -> some View {
+        frame(height: 32)
+            .padding(.horizontal, 8)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(hover ? 0.05 : 0)))
+            .padding(.horizontal, -8)
+            .contentShape(Rectangle())
+    }
+
+    @ViewBuilder func numericTransition() -> some View {
+        if #available(macOS 14, *) { contentTransition(.numericText()) } else { self }
+    }
 }
