@@ -66,6 +66,18 @@ public struct MouseConfig: Equatable, Sendable {
         debounceMs = Int(r.u8(11))
     }
 
+    init(profile: Int, reportRate: ReportRate?, liftOffLevel: Int, motionSync: Bool,
+         angleSnapping: Bool, rippleControl: Bool, sleepSeconds: Int, debounceMs: Int) {
+        self.profile = profile
+        self.reportRate = reportRate
+        self.liftOffLevel = liftOffLevel
+        self.motionSync = motionSync
+        self.angleSnapping = angleSnapping
+        self.rippleControl = rippleControl
+        self.sleepSeconds = sleepSeconds
+        self.debounceMs = debounceMs
+    }
+
     public var liftOffMillimetres: Double { MouseConfig.millimetres(liftOffLevel) }
 
     static func millimetres(_ level: Int) -> Double { Double(6 + level) / 10 }
@@ -166,20 +178,45 @@ public final class Session {
         return try receiver.transfer(command, target: .mouseBehindReceiver, payload: payload)
     }
 
+    private var compxMouse: HIDChannel? {
+        let channel = mouse ?? receiver
+        return channel?.endpoint.usesCompx == true ? channel : nil
+    }
+
+    private func requireCompxMouse(_ channel: HIDChannel) throws {
+        guard channel.endpoint.isReceiver else { return }
+        let status = try channel.readCompx(0x03, describing: .getReceiverConnectStatus)
+        guard status[6] == 1 else {
+            throw ATKError.notConnected("receiver has no mouse connected (asleep, off or not paired); wake the mouse and try again")
+        }
+    }
+
     // MARK: reading
 
     public func firmwareVersion() throws -> String {
+        if let channel = compxMouse {
+            try requireCompxMouse(channel)
+            return CompxPacket.version(try channel.readCompx(0x12, describing: .getFirmwareVersion))
+        }
         let r = try send(.getFirmwareVersion)
         return "\(r.u8(0)).\(r.u8(1)).\(r.u8(2))"
     }
 
     public func receiverVersion() throws -> String {
+        if let receiver, receiver.endpoint.usesCompx {
+            return CompxPacket.version(try receiver.readCompx(0x1D, describing: .getReceiverVersion))
+        }
         guard receiver != nil else { throw ATKError.notConnected("no receiver plugged in") }
         let r = try send(.getReceiverVersion)
         return "\(r.u8(0)).\(r.u8(1)).\(r.u8(2))"
     }
 
     public func receiverStatus() throws -> ReceiverStatus {
+        if let receiver, receiver.endpoint.usesCompx {
+            let reply = try receiver.readCompx(0x03, describing: .getReceiverConnectStatus)
+            // Online status does not establish whether an offline receiver remembers a pairing.
+            return ReceiverStatus(connected: reply[6] == 1, paired: reply[6] == 1)
+        }
         guard receiver != nil else { throw ATKError.notConnected("no receiver plugged in") }
         return ReceiverStatus(connected: try send(.getReceiverConnectStatus).u8(0) != 0,
                               paired: try send(.getPairStatus).u8(0) != 0)
@@ -188,6 +225,11 @@ public final class Session {
     /// Company and model ID of the mouse, which `Catalog.mouse(cid:mid:)` turns into a model.
     /// ATK Hub asks the receiver with 0x89 and the mouse itself with 0x4A; this tries both.
     public func mouseID() throws -> (cid: Int, mid: Int) {
+        if let channel = compxMouse {
+            try requireCompxMouse(channel)
+            let reply = try channel.readCompx(0x10, describing: .getMouseID)
+            return (Int(reply[6]), Int(reply[7]))
+        }
         var lastError: Error = ATKError.noReply(.getMouseIDViaReceiver)
         for command in receiver != nil && mouse == nil ? [Command.getMouseIDViaReceiver, .getMouseID] : [.getMouseID] {
             do {
@@ -208,6 +250,11 @@ public final class Session {
     /// The connected mouse's product ID: its own over a cable, worked out from its ID otherwise.
     public func mouseProductID() -> Int? {
         if let mouse { return mouse.endpoint.productID }
+        // Compx and BitMouse have separate model-ID namespaces.
+        if compxMouse != nil {
+            guard let id = try? mouseID(), id.cid == 2, id.mid == 87 else { return nil }
+            return 0x1119
+        }
         guard let id = try? mouseID() else { return nil }
         return Catalog.mouse(cid: id.cid, mid: id.mid)
     }
@@ -217,15 +264,22 @@ public final class Session {
     }
 
     public func battery() throws -> Battery {
-        Battery(percent: Int(try send(.getBatteryLevel).u8(0)),
+        if let channel = compxMouse {
+            try requireCompxMouse(channel)
+            let reply = try channel.readCompx(0x04, describing: .getBatteryLevel)
+            return Battery(percent: Int(reply[6]), charging: reply[7] == 1)
+        }
+        return Battery(percent: Int(try send(.getBatteryLevel).u8(0)),
                 charging: try send(.getChargingStatus).u8(0) == 1)
     }
 
     public func config() throws -> MouseConfig {
-        MouseConfig(try send(.getCurrentConfig))
+        if let channel = compxMouse { return try CompxMouse(channel: channel).config() }
+        return MouseConfig(try send(.getCurrentConfig))
     }
 
     public func dpiTable() throws -> DPITable {
+        if let channel = compxMouse { return try CompxMouse(channel: channel).dpiTable() }
         var bytes: [UInt8] = []
         for chunk in 0..<7 {  // ATK Hub reads 7 blocks of 10 bytes from address 1
             let address = UInt16(1 + chunk * 10)
@@ -245,16 +299,32 @@ public final class Session {
         guard Self.sleepChoices.contains(seconds) else {
             throw ATKError.invalidValue("sleep must be one of 30s, 1m, 2m, 3m, 5m, 20m, 25m, 30m")
         }
+        if let channel = compxMouse {
+            let device = CompxMouse(channel: channel)
+            try device.verifyModel()
+            // ATK Hub sets both LED sleep and sensor sleep, with ten-second units.
+            try device.setByte(173, value: UInt8(seconds / 10), operation: .setSleepTime)
+            try device.write(181, bytes: [1, 84, UInt8(seconds / 10), UInt8(truncatingIfNeeded: 85 - seconds / 10)], operation: .setSleepTime)
+            return
+        }
         _ = try send(.setSleepTime, payload: [UInt8(seconds & 0xFF), UInt8(seconds >> 8)])
     }
 
     public func setReportRate(_ rate: ReportRate) throws {
+        if let channel = compxMouse, let code = CompxMouse.rates.first(where: { $0.value == rate })?.key {
+            try CompxMouse(channel: channel).setByte(0, value: code, operation: .setReportRate)
+            return
+        }
         _ = try send(.setReportRate, payload: [rate.code])
     }
 
     public func setDebounce(ms: Int) throws {
         guard Self.debounceChoices.contains(ms) else {
             throw ATKError.invalidValue("debounce must be one of 0, 1, 2, 4, 8, 15, 20 ms")
+        }
+        if let channel = compxMouse {
+            try CompxMouse(channel: channel).setByte(169, value: UInt8(ms), operation: .setDebounceTime)
+            return
         }
         _ = try send(.setDebounceTime, payload: [UInt8(ms)])
     }
@@ -263,12 +333,34 @@ public final class Session {
     public func setLiftOff(millimetres: Double) throws {
         let level = Int((millimetres * 10).rounded()) - 6
         guard (1...11).contains(level) else { throw ATKError.invalidValue("lift-off must be 0.7 to 1.7 mm") }
+        if let channel = compxMouse {
+            try CompxMouse(channel: channel).setByte(10, value: UInt8(level), operation: .setLiftOff)
+            return
+        }
         _ = try send(.setLiftOff, payload: [0, UInt8(level - 1)])
     }
 
-    public func setMotionSync(_ on: Bool) throws { _ = try send(.setMotionSync, payload: [on ? 1 : 0]) }
-    public func setRippleControl(_ on: Bool) throws { _ = try send(.setRippleControl, payload: [on ? 1 : 0]) }
-    public func setAngleSnapping(_ on: Bool) throws { _ = try send(.setLinearCorrection, payload: [on ? 1 : 0]) }
+    public func setMotionSync(_ on: Bool) throws {
+        if let channel = compxMouse {
+            try CompxMouse(channel: channel).setByte(171, value: on ? 1 : 0, operation: .setMotionSync)
+            return
+        }
+        _ = try send(.setMotionSync, payload: [on ? 1 : 0])
+    }
+    public func setRippleControl(_ on: Bool) throws {
+        if let channel = compxMouse {
+            try CompxMouse(channel: channel).setByte(177, value: on ? 1 : 0, operation: .setRippleControl)
+            return
+        }
+        _ = try send(.setRippleControl, payload: [on ? 1 : 0])
+    }
+    public func setAngleSnapping(_ on: Bool) throws {
+        if let channel = compxMouse {
+            try CompxMouse(channel: channel).setByte(175, value: on ? 1 : 0, operation: .setLinearCorrection)
+            return
+        }
+        _ = try send(.setLinearCorrection, payload: [on ? 1 : 0])
+    }
 
     /// Changes one stage's value, keeping its colour; the active stage stays active, as in ATK Hub.
     public func setDPI(stage index: Int, to value: Int) throws {
@@ -279,6 +371,10 @@ public final class Session {
         guard (50...26000).contains(value), value % 50 == 0 else {
             throw ATKError.invalidValue("DPI must be a multiple of 50 between 50 and 26000")
         }
+        if let channel = compxMouse {
+            try CompxMouse(channel: channel).write(UInt16(12 + index * 4), bytes: CompxMouse.encodeDPI(value), operation: .setDPI)
+            return
+        }
         let old = table.stages[index]
         try writeStage(index, DPIStage(x: value, y: value, color: old.color), active: index == table.activeIndex)
     }
@@ -288,6 +384,10 @@ public final class Session {
         let table = try dpiTable()
         guard table.stages.indices.contains(index) else {
             throw ATKError.invalidValue("the mouse has \(table.stages.count) DPI stages")
+        }
+        if let channel = compxMouse {
+            try CompxMouse(channel: channel).setByte(4, value: UInt8(index + 1), operation: .setDPI)
+            return
         }
         try writeStage(index, table.stages[index], active: true)
     }

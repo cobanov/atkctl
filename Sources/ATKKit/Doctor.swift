@@ -68,7 +68,9 @@ public enum Doctor {
                     findings.append(Finding(
                         level: .fail,
                         message: "receiver \(receiverVersion!) has no mouse connected",
-                        fix: "move the mouse to wake it; if it stays off, run `atkctl pair`"))
+                        fix: session.receiver?.endpoint.usesCompx == true
+                            ? "move the mouse to wake it; if it stays off, pair it in ATK Hub"
+                            : "move the mouse to wake it; if it stays off, run `atkctl pair`"))
                 }
             } catch {
                 findings.append(Finding(level: .warn, message: "receiver: \(error)", fix: nil))
@@ -86,7 +88,7 @@ public enum Doctor {
                 findings.append(Finding(level: .warn, message: "mouse: \(error)", fix: nil))
             }
         }
-        if let m = mouseVersion, let r = receiverVersion, m.split(separator: ".").first != r.split(separator: ".").first {
+        if session.receiver?.endpoint.usesCompx != true, let m = mouseVersion, let r = receiverVersion, m.split(separator: ".").first != r.split(separator: ".").first {
             findings.append(Finding(level: .fail, message: "mouse \(m) and receiver \(r) firmware major versions differ",
                                     fix: "update both in ATK Hub; they will not pair across major versions"))
         }

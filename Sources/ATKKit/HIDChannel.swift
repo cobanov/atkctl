@@ -1,7 +1,7 @@
 import Foundation
 import IOKit.hid
 
-/// One ATK / VXE device as macOS sees it: the HID interface that carries usage page 0xFF05.
+/// The vendor HID interface: usage page 0xFF05 for BitMouse, 0xFF04 for supported Compx devices.
 public struct Endpoint {
     public let device: IOHIDDevice
     public let productID: Int
@@ -10,6 +10,7 @@ public struct Endpoint {
     public let locationID: Int
 
     public var model: Catalog.Model? { Catalog.models[productID] }
+    public var usesCompx: Bool { [0x1119, 0x111A].contains(productID) }
     public var isReceiver: Bool { model?.kind == .receiver }
     public var isTested: Bool { Catalog.tested.contains(productID) }
 
@@ -31,7 +32,9 @@ public struct Endpoint {
         guard let manager, let devices = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice> else { return [] }
         return devices.compactMap { device -> Endpoint? in
             let pairs = property(device, kIOHIDDeviceUsagePairsKey) as? [[String: Int]] ?? []
-            guard pairs.contains(where: { $0[kIOHIDDeviceUsagePageKey] == 0xFF05 }) else { return nil }
+            let productID = property(device, kIOHIDProductIDKey) as? Int ?? 0
+            let page = [0x1119, 0x111A].contains(productID) ? 0xFF04 : 0xFF05
+            guard pairs.contains(where: { $0[kIOHIDDeviceUsagePageKey] == page }) else { return nil }
             return Endpoint(
                 device: device,
                 productID: property(device, kIOHIDProductIDKey) as? Int ?? 0,
@@ -57,6 +60,7 @@ public enum ATKError: Error, CustomStringConvertible {
     case deviceRejected(Command)
     case notConnected(String)
     case invalidValue(String)
+    case unsupportedProtocolCommand(Command)
 
     public var description: String {
         switch self {
@@ -72,6 +76,7 @@ public enum ATKError: Error, CustomStringConvertible {
         case .deviceRejected(let c): return "the device rejected \(c)"
         case .notConnected(let what): return what
         case .invalidValue(let what): return what
+        case .unsupportedProtocolCommand(let c): return "\(c) is not yet supported for this Compx receiver; use ATK Hub for this operation"
         }
     }
 }
@@ -82,6 +87,8 @@ public final class HIDChannel {
     public let endpoint: Endpoint
     private let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 64)
     private var replies: [Reply] = []
+    private var compxReplies: [[UInt8]] = []
+    private var pendingCompxCommand: UInt8?
     private var runLoop: CFRunLoop?
     /// Reports the device sends on its own, such as `DeviceEvent.dpiChanged` when its DPI button
     /// is pressed. Called on the channel's thread whenever that thread's run loop runs in its
@@ -116,6 +123,16 @@ public final class HIDChannel {
             guard let context else { return }
             let channel = Unmanaged<HIDChannel>.fromOpaque(context).takeUnretainedValue()
             var bytes = Array(UnsafeBufferPointer(start: report, count: length))
+            if channel.endpoint.usesCompx {
+                if let reply = CompxPacket.reply(bytes, reportID: UInt8(truncatingIfNeeded: reportID)) {
+                    if reply[1] == 0x0A {
+                        channel.onEvent?(.other(reply[6]))
+                    } else if reply[1] == channel.pendingCompxCommand {
+                        channel.compxReplies.append(reply)
+                    }
+                }
+                return
+            }
             // macOS hands numbered reports over with the ID in front (64 bytes); add it if it is
             // missing. Not by looking for the command class: the mouse's own reports put a
             // checksum where replies have 0x72.
@@ -144,6 +161,7 @@ public final class HIDChannel {
     }
 
     public func transfer(_ command: Command, target: Packet.Target, payload: [UInt8] = []) throws -> Reply {
+        guard !endpoint.usesCompx else { throw ATKError.unsupportedProtocolCommand(command) }
         try open()
         let report = [Packet.reportID] + Packet.request(command, target: target, payload: payload)
         for _ in 0..<Self.attempts {
@@ -165,4 +183,39 @@ public final class HIDChannel {
         }
         throw ATKError.noReply(command)
     }
+
+    /// Read-only Compx requests. Keep them separate from BitMouse commands and reply offsets.
+    func readCompx(_ command: UInt8, describing operation: Command,
+                   address: UInt16 = 0, length: UInt8 = 0) throws -> [UInt8] {
+        try transferCompx(command, describing: operation, address: address, length: length)
+    }
+
+    func transferCompx(_ command: UInt8, describing operation: Command,
+                       address: UInt16 = 0, length: UInt8 = 0, payload: [UInt8] = []) throws -> [UInt8] {
+        guard endpoint.usesCompx else { throw ATKError.unsupportedProtocolCommand(operation) }
+        try open()
+        let report = CompxPacket.request(command, address: address, length: length, payload: payload)
+        pendingCompxCommand = command
+        defer { pendingCompxCommand = nil; compxReplies.removeAll() }
+        for _ in 0..<Self.attempts {
+            compxReplies.removeAll()
+            let result = report.withUnsafeBufferPointer {
+                IOHIDDeviceSetReport(endpoint.device, kIOHIDReportTypeFeature, 8, $0.baseAddress!, $0.count)
+            }
+            if result == kIOReturnNotPermitted { throw ATKError.secureInput }
+            guard result == kIOReturnSuccess else { throw ATKError.sendFailed(operation, result) }
+            let deadline = Date().addingTimeInterval(Self.timeout)
+            while Date() < deadline {
+                CFRunLoopRunInMode(Self.replyMode, 0.01, true)
+                if let reply = compxReplies.first(where: {
+                    $0[1] == command && $0[3] == report[3] && $0[4] == report[4]
+                }) {
+                    guard reply[2] == 0 else { throw ATKError.deviceRejected(operation) }
+                    return reply
+                }
+            }
+        }
+        throw ATKError.noReply(operation)
+    }
+
 }

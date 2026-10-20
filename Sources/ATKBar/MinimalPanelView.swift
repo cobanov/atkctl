@@ -6,7 +6,7 @@ import SwiftUI
 struct MinimalPanelView: View {
     @ObservedObject var model: MouseModel
     @ObservedObject private var images = ProductImages.shared
-    @State private var skinRevision = 0
+    @ViewState private var skinRevision = 0
     let showClassic: () -> Void
 
     private var snap: Snapshot { model.snapshot }
@@ -372,7 +372,7 @@ struct ChoiceRow: View {
     let title: String
     let value: String
     let action: () -> Void
-    @State private var hover = false
+    @ViewState private var hover = false
 
     var body: some View {
         Button(action: action) {
@@ -395,7 +395,7 @@ struct SwitchRow: View {
     let title: String
     let isOn: Bool
     let set: (Bool) -> Void
-    @State private var hover = false
+    @ViewState private var hover = false
 
     var body: some View {
         Button { set(!isOn) } label: {

@@ -72,3 +72,32 @@ All integers are little-endian.
 ## Not covered
 
 Firmware updates use a separate bootloader channel (usage pages `0xFFB1` / `0xFFB3`, report 9) and encrypted images. `atkctl` does not touch them.
+
+
+## Compx A9 Ultra compatibility
+
+PID `0x1119` (ATK A9 Ultra, CID/MID `2,87`) and receiver `0x111a` use
+ATK Hub 3.2.29's Compx driver, not the BitMouse packets above. They use
+usage page `0xFF04`, Feature report 8 for requests and Input report 8 for replies.
+Each report has 16 bytes excluding the report ID: command, status, two-byte
+big-endian EEPROM address, data length, ten data bytes, and a checksum.
+The sum including report ID and checksum is `0x55` modulo 256.
+
+Read commands: `0x03` online status, `0x04` battery, `0x08` EEPROM,
+`0x0e` profile, `0x10` CID/MID, `0x12` mouse version, `0x1d` receiver version.
+Versions are two hexadecimal fields (for example `03 01` means `3.01`).
+Mouse and receiver major versions need not match.
+
+A9 Ultra EEPROM addresses: polling rate 0, stage count 2, active stage 4
+(one-based), lift-off level 10, DPI values 12 (four bytes per stage), RGB
+44 (four bytes per stage), debounce 169, motion sync 171, LED sleep 173,
+angle snapping 175, ripple control 177, sensor sleep enable 181, sensor
+sleep time 183. Sleep uses ten-second units. Scalar fields have a companion
+byte making their sum `0x55`. DPI encoding depends on the sensor; the
+implementation is limited to the A9 Ultra's PAW3950Ultra.
+
+EEPROM writes use command `0x07` and only the requested field's bytes.
+These writes are not yet hardware-verified. Pairing remains unsupported;
+use ATK Hub. Reads were verified with mouse firmware `3.01` and receiver `1.75`.
+
+Reference: https://bpcdn.atkgear.com/hub-v3/production/3.2.29/static/filter-BRWy5Cag.js
