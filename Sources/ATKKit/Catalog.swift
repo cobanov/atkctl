@@ -1,4 +1,4 @@
-/// Devices ATK Hub drives with the BitMouse protocol (vendor 0x373B), taken from its device list.
+/// ATK Hub devices (vendor 0x373B): BitMouse models plus the Compx A9 Ultra and its receiver.
 /// Only the ATK A9 Plus NK (0x1263) and the NK NANO dongle (0x1216) have been tested.
 public enum Catalog {
     public static let vendorID = 0x373B
@@ -11,6 +11,8 @@ public enum Catalog {
     }
 
     public static let models: [Int: Model] = [
+        0x1119: Model(name: "ATK A9 Ultra", kind: .mouse),
+        0x111A: Model(name: "Wireless mouse 8k dongle", kind: .receiver),
         0x1154: Model(name: "ATK ZERO", kind: .mouse),
         0x1155: Model(name: "Wireless mouse 8k dongle-L1", kind: .receiver),
         0x11DB: Model(name: "ATK A9 Pro Max 2.0 NK", kind: .mouse),

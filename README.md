@@ -78,7 +78,9 @@ Every setting is one ATK Hub can also change, and can be changed back from ATK H
 
 ## Supported devices
 
-The device list is the one ATK Hub drives with this protocol: about seventy ATK and VXE mice and receivers, NearLink (NK) and 2.4 GHz alike. It has been tested with an **ATK A9 Plus NK** (`0x1263`) and its **NK mouse NANO dongle** (`0x1216`); `atkctl list` marks the others `[untested]`. Reports from other models are welcome.
+The BitMouse device list is the one ATK Hub drives with this protocol: about seventy ATK and VXE mice and receivers, NearLink (NK) and 2.4 GHz alike. It has been tested with an **ATK A9 Plus NK** (`0x1263`) and its **NK mouse NANO dongle** (`0x1216`); `atkctl list` marks the others `[untested]`. Reports from other models are welcome.
+
+The **ATK A9 Ultra** (`0x1119`, Compx model ID `2,87`) and its **Wireless mouse 8k dongle** (`0x111a`) use a separate Compx transport. Version, battery, configuration and DPI reads have been verified on this pair. Settings writes are implemented from ATK Hub's format but have not been hardware-verified. Pairing for this pair must be done in ATK Hub; other Compx mouse models are not supported.
 
 ## How it works
 

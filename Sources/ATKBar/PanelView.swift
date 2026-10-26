@@ -3,7 +3,7 @@ import SwiftUI
 
 struct PanelView: View {
     @ObservedObject var model: MouseModel
-    @State private var liftOff = 1.0
+    @ViewState private var liftOff = 1.0
 
     private var snap: Snapshot { model.snapshot }
 
