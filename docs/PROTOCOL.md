@@ -89,7 +89,7 @@ Versions are two hexadecimal fields (for example `03 01` means `3.01`).
 Mouse and receiver major versions need not match.
 
 A9 Ultra EEPROM addresses: polling rate 0, stage count 2, active stage 4
-(one-based), lift-off level 10, DPI values 12 (four bytes per stage), RGB
+(zero-based), lift-off level 10, DPI values 12 (four bytes per stage), RGB
 44 (four bytes per stage), debounce 169, motion sync 171, LED sleep 173,
 angle snapping 175, ripple control 177, sensor sleep enable 181, sensor
 sleep time 183. Sleep uses ten-second units. Scalar fields have a companion
@@ -97,7 +97,7 @@ byte making their sum `0x55`. DPI encoding depends on the sensor; the
 implementation is limited to the A9 Ultra's PAW3950Ultra.
 
 EEPROM writes use command `0x07` and only the requested field's bytes.
-These writes are not yet hardware-verified. Pairing remains unsupported;
+Active-stage writes use the zero-based index; ATK Hub must reload the device to reflect external changes. Other writes are not yet hardware-verified. Pairing remains unsupported;
 use ATK Hub. Reads were verified with mouse firmware `3.01` and receiver `1.75`.
 
 Reference: https://bpcdn.atkgear.com/hub-v3/production/3.2.29/static/filter-BRWy5Cag.js

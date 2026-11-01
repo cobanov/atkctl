@@ -55,11 +55,7 @@ struct CompxMouse {
     func dpiTable() throws -> DPITable {
         try verifyModel()
         let settings = try read(0, count: 6)
-        let count = Int(settings[2])
-        let active = Int(settings[4]) - 1
-        guard (1...8).contains(count), (0..<count).contains(active) else {
-            throw ATKError.invalidValue("invalid DPI stage count/index reported by the Compx mouse")
-        }
+        let (count, active) = try Self.decodeDPISelection(settings)
         var stages: [DPIStage] = []
         for index in 0..<count {
             let value = Self.decodeDPI(try read(UInt16(12 + index * 4), count: 4))
@@ -67,6 +63,16 @@ struct CompxMouse {
             stages.append(DPIStage(x: value.x, y: value.y, color: (rgb[0], rgb[1], rgb[2])))
         }
         return DPITable(activeIndex: active, stages: stages)
+    }
+
+    /// EEPROM address 4 stores a zero-based stage index, as used by ATK Hub.
+    static func decodeDPISelection(_ settings: [UInt8]) throws -> (count: Int, active: Int) {
+        let count = Int(settings[2])
+        let active = Int(settings[4])
+        guard (1...8).contains(count), (0..<count).contains(active) else {
+            throw ATKError.invalidValue("invalid DPI stage count/index reported by the Compx mouse")
+        }
+        return (count, active)
     }
 
     /// Write only the requested EEPROM field, preserving adjacent settings.

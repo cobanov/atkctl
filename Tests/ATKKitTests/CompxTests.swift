@@ -47,3 +47,15 @@ import Testing
     #expect(report[8..<16].allSatisfy { $0 == 0 })
     #expect(report.reduce(0) { $0 + Int($1) } & 0xFF == 0x55)
 }
+
+@Test func compxDPISelectionUsesZeroBasedHardwareIndex() throws {
+    // ATK Hub's first and fourth stages, with scalar checksum companions.
+    let first = try CompxMouse.decodeDPISelection([1, 84, 4, 81, 0, 85])
+    #expect(first.count == 4)
+    #expect(first.active == 0)
+    let last = try CompxMouse.decodeDPISelection([1, 84, 4, 81, 3, 82])
+    #expect(last.active == 3)
+    #expect(throws: ATKError.self) {
+        try CompxMouse.decodeDPISelection([1, 84, 4, 81, 4, 81])
+    }
+}
