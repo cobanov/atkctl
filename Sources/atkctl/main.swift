@@ -7,13 +7,15 @@ let usage = """
 atkctl \(version): configure ATK / VXE mice on macOS, without ATK Hub
 
 usage:
-  atkctl [status] [--json]       mouse and receiver: firmware, battery, settings
-  atkctl dpi                     DPI stages
-  atkctl set <setting> <value>   change a setting, then read it back
+  atkctl [status] [--json] [--wait]       mouse and receiver: firmware, battery, settings
+  atkctl dpi [--wait]            DPI stages
+  atkctl set <setting> <value> [--wait]   change a setting, then read it back
   atkctl pair [--yes]            pair the mouse with the plugged-in receiver
   atkctl doctor [--fix-karabiner]  find what stops the mouse or ATK Hub working
   atkctl list                    connected devices
   atkctl raw <cmd> [payload…]    one request, reply in hex (see docs/PROTOCOL.md)
+
+--wait: wait for the connected mouse to respond; Ctrl+C cancels.
 
 settings:
   sleep            30s 1m 2m 3m 5m 20m 25m 30m
@@ -53,9 +55,26 @@ func duration(_ seconds: Int) -> String {
     seconds % 60 == 0 ? "\(seconds / 60) min" : "\(seconds) s"
 }
 
-func session() -> Session {
+func session(waitForMouse: Bool = false) -> Session {
     let s = Session()
     if s.isEmpty { fail("no ATK / VXE mouse or receiver found") }
+    if waitForMouse && flags.contains("--wait") {
+        var announced = false
+        while true {
+            do {
+                _ = try s.firmwareVersion()
+                break
+            } catch ATKError.notConnected, ATKError.noReply {
+                if !announced {
+                    FileHandle.standardError.write(Data("Waiting for mouse; move or click it to continue (Ctrl+C to cancel)…\n".utf8))
+                    announced = true
+                }
+                Thread.sleep(forTimeInterval: 0.25)
+            } catch {
+                fail("\(error)")
+            }
+        }
+    }
     return s
 }
 
@@ -64,7 +83,7 @@ func attempt<T>(_ body: () throws -> T) -> T? {
 }
 
 func status(json: Bool) {
-    let s = session()
+    let s = session(waitForMouse: true)
     var out: [String: Any] = [:]
     var lines: [String] = []
 
@@ -123,7 +142,7 @@ func status(json: Bool) {
 func pad(_ s: String) -> String { s.padding(toLength: max(s.count + 3, 26), withPad: " ", startingAt: 0) }
 
 func dpi() {
-    let s = session()
+    let s = session(waitForMouse: true)
     do {
         let table = try s.dpiTable()
         for (i, stage) in table.stages.enumerated() {
@@ -138,7 +157,7 @@ func dpi() {
 
 func set(_ args: [String]) {
     guard args.count >= 2 else { fail("usage: atkctl set <setting> <value>; see `atkctl help`") }
-    let s = session()
+    let s = session(waitForMouse: true)
     do {
         switch args[0] {
         case "sleep":
