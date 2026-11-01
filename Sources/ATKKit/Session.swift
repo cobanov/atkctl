@@ -386,7 +386,7 @@ public final class Session {
             throw ATKError.invalidValue("the mouse has \(table.stages.count) DPI stages")
         }
         if let channel = compxMouse {
-            try CompxMouse(channel: channel).setByte(4, value: UInt8(index + 1), operation: .setDPI)
+            try CompxMouse(channel: channel).setByte(4, value: UInt8(index), operation: .setDPI)
             return
         }
         try writeStage(index, table.stages[index], active: true)
