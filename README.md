@@ -66,6 +66,17 @@ On first launch macOS asks to allow ATKBar under Input Monitoring; it needs that
 
 Every setting is one ATK Hub can also change, and can be changed back from ATK Hub. Firmware updates are left to ATK Hub on purpose: they go through the bootloader, and a failed one can brick the mouse.
 
+### Waiting for an inactive mouse
+
+With the mouse or receiver plugged in, use `atkctl --wait` (or `atkctl status --wait`)
+to wait until the mouse responds, then print its current status and exit.
+`atkctl dpi --wait` and `atkctl set dpi-stage 2 --wait` also wait before running.
+The CLI checks again every 250 ms after an unavailable response; a timed-out
+request can take longer. Move or click the mouse to resume, or press Ctrl+C to
+cancel. The waiting message goes to stderr, so `atkctl --wait --json` keeps stdout
+as JSON. Permission and other non-transient errors still fail immediately.
+Without `--wait`, commands retain their existing behavior.
+
 ## When the receiver looks dead
 
 `atkctl doctor` checks for these:
@@ -109,14 +120,3 @@ swift test           # protocol tests, using replies recorded from a real mouse
 ## License
 
 MIT. Not affiliated with ATK or VXE; the names are used only to say which devices this works with.
-
-### Waiting for an inactive mouse
-
-With the mouse or receiver plugged in, use `atkctl --wait` (or `atkctl status --wait`)
-to wait until the mouse responds, then print its current status and exit.
-`atkctl dpi --wait` and `atkctl set dpi-stage 2 --wait` also wait before running.
-The CLI checks again every 250 ms after an unavailable response; a timed-out
-request can take longer. Move or click the mouse to resume, or press Ctrl+C to
-cancel. The waiting message goes to stderr, so `atkctl --wait --json` keeps stdout
-as JSON. Permission and other non-transient errors still fail immediately.
-Without `--wait`, commands retain their existing behavior.
