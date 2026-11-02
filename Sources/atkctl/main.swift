@@ -8,6 +8,9 @@ atkctl \(version): configure ATK / VXE mice on macOS, without ATK Hub
 
 usage:
   atkctl [status] [--json] [--wait]       mouse and receiver: firmware, battery, settings
+  atkctl --battery-widget       continuously publish battery/charging to the macOS widget
+  atkctl --install-service      install/start battery widget service at login
+  atkctl --uninstall-service    stop/remove battery widget service
   atkctl dpi [--wait]            DPI stages
   atkctl set <setting> <value> [--wait]   change a setting, then read it back
   atkctl pair [--yes]            pair the mouse with the plugged-in receiver
@@ -271,6 +274,25 @@ func list() {
 var args = Array(CommandLine.arguments.dropFirst())
 let flags = Set(args.filter { $0.hasPrefix("--") })
 args.removeAll { $0.hasPrefix("--") }
+
+if !flags.isDisjoint(with: ["--install-service", "--uninstall-service"]) {
+    guard args.isEmpty, flags.count == 1 else {
+        fail("service options must be used alone")
+    }
+    do {
+        if flags.contains("--install-service") { try BatteryService.install() }
+        else { try BatteryService.uninstall() }
+    } catch { fail(error.localizedDescription) }
+    exit(0)
+}
+
+if flags.contains("--battery-widget") {
+    guard (args.isEmpty || args == ["status"]), flags == ["--battery-widget"] else {
+        fail("--battery-widget cannot be combined with other commands or flags")
+    }
+    do { try BatteryWidget().run() } catch { fail("\(error)") }
+    exit(0)
+}
 
 switch args.first ?? "status" {
 case "status": status(json: flags.contains("--json"))
