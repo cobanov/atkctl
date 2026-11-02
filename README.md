@@ -30,6 +30,45 @@ For the menu bar app, `scripts/build-app.sh --install` builds `ATKBar.app` into 
 
 Needs macOS 13 or later and the Swift toolchain that comes with Xcode or the Command Line Tools. The mouse works through its receiver or its cable; with both plugged in, `atkctl` talks over the cable.
 
+## macOS battery widget
+
+```bash
+atkctl --battery-widget
+```
+
+Publishes the mouse's battery percentage and charging state to the native macOS Batteries widget. It stays in the foreground with the HID session open, listening for device reports and USB connection/removal. It queries the battery every minute as a fallback and publishes only changed readings. Device reports are coalesced to at most one query per second.
+
+If the mouse is asleep or temporarily unavailable while its receiver remains connected, the last successfully published battery and charging values are retained and the process retries every five seconds. The entry is removed only when discovery finds no supported ATK / VXE HID device; reconnecting a cable or receiver rebuilds the HID session automatically. Ctrl+C or SIGTERM removes the battery entry and closes the session. Cable and receiver use one logical mouse entry, matching the CLI's existing single-mouse selection. A wired, fully charged mouse remains on external power even when its charging flag is false.
+
+This uses private IOKit accessory-power APIs, tested with the native widget on macOS 27.2. Other OS versions may not display the entry; missing APIs produce an error. No driver or root privileges are required. Run one instance, and stop any older standalone battery bridge first. This option cannot be combined with other flags or configuration commands and does not install a login item by itself.
+
+### Run automatically at login
+
+```bash
+atkctl --install-service
+atkctl --uninstall-service
+```
+
+`--install-service` installs and immediately starts the current build as a user LaunchAgent named `dev.cobanov.atkctl.battery`. It copies the executable to `~/Library/Application Support/atkctl/atkctl`, so cleaning or moving the build directory does not break the service. Run the command again after rebuilding to update/restart the installed copy. Do not use sudo. Stop any manually running `--battery-widget` process first.
+
+The agent runs `--battery-widget`, starts at login, and restarts if it exits. Its plist is `~/Library/LaunchAgents/dev.cobanov.atkctl.battery.plist`; output goes to `~/Library/Logs/atkctl-battery.log`. If macOS denies HID access, allow the installed executable in Privacy & Security → Input Monitoring. Uninstall stops the agent and removes its plist and copied executable; logs are retained. Both options must be used alone.
+
+The installer prints the permission setup steps and exact installed executable path. Before expecting battery readings:
+
+1. Open **System Settings → Privacy & Security → Input Monitoring**.
+2. Click **+**, press **Command-Shift-G**, and enter `~/Library/Application Support/atkctl/atkctl`. Add it and enable its switch. Permissions for the terminal or a build-directory copy do not authorize the service.
+3. Restart the authorized service without reinstalling:
+
+   ```bash
+   launchctl kickstart -k gui/$(id -u)/dev.cobanov.atkctl.battery
+   ```
+
+The receiver exposes a keyboard-class HID interface, which makes macOS require this permission. atkctl uses vendor reports for battery/configuration and does not implement keystroke monitoring. With ad-hoc signing, recompiling changes the executable identity: if the log still reports denied access after updating, remove the old Input Monitoring entry, add the installed executable again, and restart the service. An enabled switch alone may still refer to the old build.
+
+A running LaunchAgent does not confirm HID access. Wake the mouse and check `~/Library/Logs/atkctl-battery.log` for a battery percentage.
+
+Inspect the service with `launchctl print gui/$(id -u)/dev.cobanov.atkctl.battery`.
+
 ## Menu bar app
 
 <img src="docs/atkbar.png" width="340" alt="ATKBar panel"> <img src="docs/atkbar-classic.png" width="290" alt="ATKBar classic panel">
@@ -47,6 +86,7 @@ On first launch macOS asks to allow ATKBar under Input Monitoring; it needs that
 | Command | Does |
 |---|---|
 | `atkctl` / `atkctl status [--json]` | Firmware of mouse and receiver, battery, connection, current settings |
+| `atkctl --battery-widget` | Continuously publish battery/charging to the native Batteries widget |
 | `atkctl dpi` | DPI stages, the active one starred |
 | `atkctl set <setting> <value>` | Changes a setting, then reads it back from the mouse |
 | `atkctl pair [--yes]` | Pairs the mouse with the plugged-in receiver (forgets the old pairing) |
@@ -120,3 +160,14 @@ swift test           # protocol tests, using replies recorded from a real mouse
 ## License
 
 MIT. Not affiliated with ATK or VXE; the names are used only to say which devices this works with.
+
+### Waiting for an inactive mouse
+
+With the mouse or receiver plugged in, use `atkctl --wait` (or `atkctl status --wait`)
+to wait until the mouse responds, then print its current status and exit.
+`atkctl dpi --wait` and `atkctl set dpi-stage 2 --wait` also wait before running.
+The CLI checks again every 250 ms after an unavailable response; a timed-out
+request can take longer. Move or click the mouse to resume, or press Ctrl+C to
+cancel. The waiting message goes to stderr, so `atkctl --wait --json` keeps stdout
+as JSON. Permission and other non-transient errors still fail immediately.
+Without `--wait`, commands retain their existing behavior.
